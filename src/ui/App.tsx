@@ -11,6 +11,7 @@ import StatusPanel from "./StatusPanel";
 import GraphWorkspace from "./GraphWorkspace";
 import UiSettingsPanel, { type UiSettings } from "./UiSettingsPanel";
 import MissionLog, { type MissionEvent } from "./MissionLog";
+import EventNavigator from "./EventNavigator";
 
 type TabId = "simulation" | "theory";
 type EventTone = NonNullable<MissionEvent["tone"]>;
@@ -657,6 +658,13 @@ export default function App() {
                 onDisabledAttempt={() => setUiMessage(playbackDisabledReason)}
                 eventTime={result.outcome.interceptTime ?? result.outcome.minDistanceTime}
                 eventLabel={result.outcome.intercepted ? "EVENTO DE INTERCEPCIÓN" : "DISTANCIA MÍNIMA"}
+              />}
+              {showTimeline && <EventNavigator
+                result={result}
+                currentFrame={safeFrame}
+                onSeek={handleSeek}
+                disabled={playbackDisabled}
+                onDisabledAttempt={() => setUiMessage(playbackDisabledReason)}
               />}
               <div className="secondary-controls">
                 <button onClick={() => setShowStateStrip((value) => !value)} className="hud-mini-button">RESUMEN</button>
