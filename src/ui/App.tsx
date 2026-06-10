@@ -1,16 +1,56 @@
 /**
  * Grupo 3 — UI / orquestador.
  */
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import type { SimulationConfig, SimulationResult } from "../shared/types";
 import { mockResult, mockConfig } from "../shared/mockResult";
-import Controls from "./Controls";
+import Controls, { validateConfig } from "./Controls";
 import PlaybackBar from "./PlaybackBar";
 import StatusPanel from "./StatusPanel";
-import GraphPlaceholder from "./GraphPlaceholder";
+import GraphWorkspace from "./GraphWorkspace";
+import UiSettingsPanel, { type UiSettings } from "./UiSettingsPanel";
+import MissionLog, { type MissionEvent } from "./MissionLog";
 
 type TabId = "simulation" | "theory";
+type EventTone = NonNullable<MissionEvent["tone"]>;
+
+const DEFAULT_UI_SETTINGS: UiSettings = {
+  theme: "green",
+  scanlines: true,
+  glow: true,
+  reducedMotion: false,
+  density: "normal",
+  sound: false,
+  panelStyle: "tactical",
+  gridIntensity: "medium",
+};
+
+const VALID_UI_SETTINGS = {
+  theme: ["green", "cyan", "amber", "threat", "blueprint", "terminal", "militaryNight", "naval", "desert", "contrast", "skyOps", "lightHangar", "tacticalMap", "laboratory"],
+  density: ["compact", "normal", "presentation"],
+  panelStyle: ["tactical", "glass", "blueprint", "crt", "minimal", "alert"],
+  gridIntensity: ["low", "medium", "high"],
+} as const;
+
+function loadUiSettings(): UiSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem("taccon-ui-settings") ?? "{}") as Partial<UiSettings>;
+    return {
+      ...DEFAULT_UI_SETTINGS,
+      theme: VALID_UI_SETTINGS.theme.includes(saved.theme as UiSettings["theme"]) ? saved.theme as UiSettings["theme"] : DEFAULT_UI_SETTINGS.theme,
+      density: VALID_UI_SETTINGS.density.includes(saved.density as UiSettings["density"]) ? saved.density as UiSettings["density"] : DEFAULT_UI_SETTINGS.density,
+      panelStyle: VALID_UI_SETTINGS.panelStyle.includes(saved.panelStyle as UiSettings["panelStyle"]) ? saved.panelStyle as UiSettings["panelStyle"] : DEFAULT_UI_SETTINGS.panelStyle,
+      gridIntensity: VALID_UI_SETTINGS.gridIntensity.includes(saved.gridIntensity as UiSettings["gridIntensity"]) ? saved.gridIntensity as UiSettings["gridIntensity"] : DEFAULT_UI_SETTINGS.gridIntensity,
+      scanlines: typeof saved.scanlines === "boolean" ? saved.scanlines : DEFAULT_UI_SETTINGS.scanlines,
+      glow: typeof saved.glow === "boolean" ? saved.glow : DEFAULT_UI_SETTINGS.glow,
+      reducedMotion: typeof saved.reducedMotion === "boolean" ? saved.reducedMotion : DEFAULT_UI_SETTINGS.reducedMotion,
+      sound: typeof saved.sound === "boolean" ? saved.sound : DEFAULT_UI_SETTINGS.sound,
+    };
+  } catch {
+    return DEFAULT_UI_SETTINGS;
+  }
+}
 
 const tabContentVariants = {
   initial: { opacity: 0, y: 8 },
@@ -18,37 +58,391 @@ const tabContentVariants = {
   exit: { opacity: 0, y: -6 },
 };
 
-const staggerContainer = {
-  animate: {
-    transition: { staggerChildren: 0.08, delayChildren: 0.15 },
-  },
-};
+function clampFrame(frame: number, lastFrame: number) {
+  return Number.isFinite(frame)
+    ? Math.min(Math.max(0, Math.floor(frame)), lastFrame)
+    : 0;
+}
 
-const fadeInUp = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-};
+function runSimulation(config: SimulationConfig): SimulationResult {
+  // Reemplazar este fallback con simulate(config) cuando el Grupo 2 lo exporte.
+  const fallbackResult = structuredClone(mockResult);
+  return {
+    ...fallbackResult,
+    metadata: {
+      ...fallbackResult.metadata,
+      config: structuredClone(config),
+      integrator: config.simulation.integrator,
+      steps: fallbackResult.time.length,
+    },
+  };
+}
+
+function configsMatch(left: SimulationConfig, right: SimulationConfig) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("simulation");
-  const [config, setConfig] = useState<SimulationConfig>(mockConfig);
-  const [result, setResult] = useState<SimulationResult>(mockResult);
-
+  const [config, setConfig] = useState<SimulationConfig>(() => structuredClone(mockConfig));
+  const [result, setResult] = useState<SimulationResult>(() => structuredClone(mockResult));
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [presentationMode, setPresentationMode] = useState(false);
+  const [uiSettings, setUiSettings] = useState<UiSettings>(loadUiSettings);
+  const [uiMessage, setUiMessage] = useState("Simulación cargada con datos mock · lista para reproducir");
+  const [runCount, setRunCount] = useState(1);
+  const [lastRunTime, setLastRunTime] = useState(() => new Date());
+  const [runNotice, setRunNotice] = useState<string | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
+  const [missionEvents, setMissionEvents] = useState<MissionEvent[]>([]);
+  const [demoSignal, setDemoSignal] = useState(0);
+  const [focusSignal, setFocusSignal] = useState(0);
+  const [layoutSignal, setLayoutSignal] = useState(0);
+  const [escapeSignal, setEscapeSignal] = useState(0);
+  const [resetWorkspaceSignal, setResetWorkspaceSignal] = useState(0);
+  const [inspectorSignal, setInspectorSignal] = useState(0);
+  const [cleanSignal, setCleanSignal] = useState(0);
+  const [missionLogOpen, setMissionLogOpen] = useState(false);
+  const [closePanelsSignal, setClosePanelsSignal] = useState(0);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  const [showStatusPanel, setShowStatusPanel] = useState(true);
+  const [showTimeline, setShowTimeline] = useState(true);
+  const [showStateStrip, setShowStateStrip] = useState(true);
+  const lastTimestampRef = useRef<number | null>(null);
+  const elapsedRef = useRef(0);
+  const eventIdRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const endNotifiedRef = useRef(false);
+  const lastConfigLogRef = useRef("");
+  const lastLoggedSeekRef = useRef(-999);
 
-  const totalFrames = result.metadata.steps;
+  const totalFrames = result.time.length;
+  const lastFrame = Math.max(0, totalFrames - 1);
+  const safeFrame = clampFrame(currentFrame, lastFrame);
 
-  const currentTime = result.time[currentFrame] ?? 0;
-  const currentDistance = result.distance[currentFrame] ?? 0;
-  const closingVel = result.closingVelocity[currentFrame] ?? 0;
+  const currentTime = result.time[safeFrame] ?? 0;
+  const currentDistance = result.distance[safeFrame] ?? 0;
+  const closingVel = result.closingVelocity[safeFrame] ?? 0;
+  const configErrors = validateConfig(config);
+  const configInvalid = configErrors.length > 0;
+  const configPending = !configsMatch(config, result.metadata.config);
+  const configStatus = configInvalid ? "INVÁLIDA" : configPending ? "PENDIENTE" : "APLICADA";
+  const playbackDisabled = configInvalid || configPending;
+  const playbackDisabledReason = configInvalid
+    ? "Corregí la configuración antes de reproducir"
+    : "Ejecutá la simulación para aplicar cambios";
+
+  const playTone = useCallback((frequency: number, duration = 0.06) => {
+    if (!uiSettings.sound) return;
+    try {
+      const AudioContextConstructor = window.AudioContext;
+      const context = audioContextRef.current ?? new AudioContextConstructor();
+      audioContextRef.current = context;
+      if (context.state === "suspended") void context.resume();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.025, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + duration);
+    } catch {
+    }
+  }, [uiSettings.sound]);
+
+  const addEvent = useCallback((message: string, tone: EventTone = "info", toast = true) => {
+    const event: MissionEvent = {
+      id: ++eventIdRef.current,
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      message,
+      tone,
+    };
+    setMissionEvents((events) => [...events, event].slice(-10));
+    if (toast) setActionToast(message);
+  }, []);
+
+  const handleUiEvent = useCallback((message: string) => {
+    setActionToast(message);
+    playTone(message.includes("oculto") || message.includes("cerrad") ? 300 : 520, 0.045);
+  }, [playTone]);
+
+  useEffect(() => {
+    setCurrentFrame((frame) => clampFrame(frame, lastFrame));
+  }, [lastFrame, result]);
+
+  useEffect(() => {
+    if (safeFrame < lastFrame) {
+      endNotifiedRef.current = false;
+      return;
+    }
+    if (totalFrames > 1 && !endNotifiedRef.current) {
+      endNotifiedRef.current = true;
+      addEvent("Fin de corrida alcanzado", "success");
+      playTone(320, 0.1);
+    }
+  }, [addEvent, lastFrame, playTone, safeFrame, totalFrames]);
+
+  useEffect(() => {
+    if (!runNotice) return;
+    const timeoutId = window.setTimeout(() => setRunNotice(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [runNotice]);
+
+  useEffect(() => {
+    if (!actionToast) return;
+    const timeoutId = window.setTimeout(() => setActionToast(null), 2400);
+    return () => window.clearTimeout(timeoutId);
+  }, [actionToast]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("taccon-ui-settings", JSON.stringify(uiSettings));
+    } catch {
+    }
+  }, [uiSettings]);
+
+  useEffect(() => () => {
+    void audioContextRef.current?.close();
+  }, []);
+
+  useEffect(() => {
+    if (!playing || totalFrames <= 1) {
+      lastTimestampRef.current = null;
+      elapsedRef.current = 0;
+      return;
+    }
+
+    const dt = result.metadata.config.simulation.dt;
+    const frameDuration = (Number.isFinite(dt) && dt > 0 ? dt : 0.05) * 1000 / speed;
+    let animationFrameId = 0;
+
+    const advance = (timestamp: number) => {
+      if (lastTimestampRef.current === null) {
+        lastTimestampRef.current = timestamp;
+      } else {
+        elapsedRef.current += timestamp - lastTimestampRef.current;
+        lastTimestampRef.current = timestamp;
+      }
+
+      const framesToAdvance = Math.floor(elapsedRef.current / frameDuration);
+      if (framesToAdvance > 0) {
+        elapsedRef.current -= framesToAdvance * frameDuration;
+        setCurrentFrame((frame) => {
+          const nextFrame = Math.min(frame + framesToAdvance, lastFrame);
+          if (nextFrame >= lastFrame) {
+            setPlaying(false);
+          }
+          return nextFrame;
+        });
+      }
+
+      animationFrameId = requestAnimationFrame(advance);
+    };
+
+    animationFrameId = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [lastFrame, playing, result.metadata.config.simulation.dt, speed, totalFrames]);
+
+  const handleSimulate = useCallback((nextConfig: SimulationConfig) => {
+    setConfig(structuredClone(nextConfig));
+    setResult(runSimulation(nextConfig));
+    setCurrentFrame(0);
+    setPlaying(false);
+    lastConfigLogRef.current = "";
+    lastLoggedSeekRef.current = -999;
+    setRunCount((count) => count + 1);
+    setLastRunTime(new Date());
+    setRunNotice("Simulación cargada con mock · frame reiniciado · listo para reproducir");
+    setUiMessage("Resultado mock aplicado y listo para reproducir");
+    addEvent(`CORRIDA #${runCount + 1} cargada · fuente mock · frame 0`, "success");
+    playTone(720);
+  }, [addEvent, playTone, runCount]);
+
+  const handleConfigChange = useCallback((nextConfig: SimulationConfig) => {
+    const errors = validateConfig(nextConfig);
+    const invalid = errors.length > 0;
+    setConfig(nextConfig);
+    setPlaying(false);
+    setUiMessage(
+      invalid
+        ? "Corregí la configuración antes de reproducir"
+        : "Ejecutá la simulación para aplicar cambios",
+    );
+    const logMessage = invalid ? `Config inválida: ${errors[0]}` : "Configuración modificada · requiere ejecutar";
+    if (lastConfigLogRef.current !== logMessage) {
+      lastConfigLogRef.current = logMessage;
+      addEvent(logMessage, invalid ? "warning" : "info", false);
+    }
+    if (invalid) playTone(180, 0.09);
+  }, [addEvent, playTone]);
+
+  const handlePlay = useCallback(() => {
+    if (playbackDisabled) {
+      setUiMessage(playbackDisabledReason);
+      addEvent(playbackDisabledReason, "warning");
+      playTone(180, 0.09);
+      return;
+    }
+    setCurrentFrame((frame) => frame >= lastFrame ? 0 : frame);
+    setPlaying(totalFrames > 1);
+    setUiMessage("Reproduciendo última simulación aplicada");
+    addEvent("Reproducción iniciada", "success");
+    playTone(620);
+  }, [addEvent, lastFrame, playTone, playbackDisabled, playbackDisabledReason, totalFrames]);
+
+  const handlePause = useCallback(() => {
+    setPlaying(false);
+    addEvent("Reproducción pausada");
+    playTone(280);
+  }, [addEvent, playTone]);
+
+  const handleRestart = useCallback(() => {
+    setCurrentFrame(0);
+    setPlaying(false);
+    addEvent("Línea de tiempo reiniciada · frame 0");
+    playTone(420);
+  }, [addEvent, playTone]);
+
+  const handleSeek = useCallback((frame: number) => {
+    const nextFrame = clampFrame(frame, lastFrame);
+    setCurrentFrame(nextFrame);
+    setPlaying(false);
+    if (nextFrame === 0 || nextFrame === lastFrame || Math.abs(nextFrame - lastLoggedSeekRef.current) >= 5) {
+      lastLoggedSeekRef.current = nextFrame;
+      addEvent(`Frame seleccionado: ${nextFrame}/${lastFrame}`, "info", false);
+    }
+  }, [addEvent, lastFrame]);
+
+  const handleSpeedChange = useCallback((nextSpeed: number) => {
+    setSpeed(nextSpeed);
+    setActionToast(`Velocidad de reproducción: ${nextSpeed}×`);
+    playTone(440 + nextSpeed * 40, 0.04);
+  }, [playTone]);
+
+  const handlePresentationMode = useCallback((enabled: boolean) => {
+    setPresentationMode(enabled);
+    setActionToast(enabled ? "Modo presentación activado" : "Modo presentación desactivado");
+  }, []);
+
+  const handleUiSettingsChange = useCallback((next: UiSettings) => {
+    if (next.theme !== uiSettings.theme) setActionToast("Tema visual actualizado");
+    if (next.sound !== uiSettings.sound) setActionToast(`Sonido UI ${next.sound ? "activado" : "silenciado"}`);
+    setUiSettings(next);
+  }, [uiSettings]);
+
+  const handleDemoMode = useCallback(() => {
+    setPresentationMode(true);
+    setCurrentFrame(0);
+    setPlaying(false);
+    setDemoSignal((signal) => signal + 1);
+    setUiMessage("Demo lista · presioná Reproducir para iniciar");
+    addEvent("Modo demo listo · todos los visores · frame 0", "success");
+  }, [addEvent]);
+
+  const handleCleanView = useCallback(() => {
+    setPresentationMode(true);
+    setShowStatusPanel(true);
+    setShowTimeline(true);
+    setShowStateStrip(false);
+    setClosePanelsSignal((signal) => signal + 1);
+    setCleanSignal((signal) => signal + 1);
+    setMissionLogOpen(false);
+    setActionToast("Vista limpia activada");
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, select, textarea, [contenteditable='true']")) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (playing) handlePause();
+        else handlePlay();
+      } else if (event.key.toLowerCase() === "r") {
+        handleRestart();
+      } else if (event.key === "ArrowLeft") {
+        handleSeek(safeFrame - 5);
+      } else if (event.key === "ArrowRight") {
+        handleSeek(safeFrame + 5);
+      } else if (event.key.toLowerCase() === "a") {
+        handleSeek(safeFrame - 5);
+      } else if (event.key.toLowerCase() === "d") {
+        handleSeek(safeFrame + 5);
+      } else if (event.key.toLowerCase() === "p") {
+        handlePresentationMode(!presentationMode);
+      } else if (event.key.toLowerCase() === "f") {
+        setFocusSignal((signal) => signal + 1);
+      } else if (event.key.toLowerCase() === "g") {
+        setLayoutSignal((signal) => signal + 1);
+      } else if (event.key.toLowerCase() === "l") {
+        setMissionLogOpen((open) => !open);
+      } else if (event.key.toLowerCase() === "i") {
+        setInspectorSignal((signal) => signal + 1);
+      } else if (event.key.toLowerCase() === "m") {
+        handleUiSettingsChange({ ...uiSettings, sound: !uiSettings.sound });
+      } else if (event.key.toLowerCase() === "h") {
+        setShowShortcutHelp((value) => !value);
+      } else if (event.key === "Escape") {
+        setPresentationMode(false);
+        setEscapeSignal((signal) => signal + 1);
+        setClosePanelsSignal((signal) => signal + 1);
+        setMissionLogOpen(false);
+        setShowShortcutHelp(false);
+        setActionToast(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handlePause, handlePlay, handlePresentationMode, handleRestart, handleSeek, handleUiSettingsChange, playing, presentationMode, safeFrame, uiSettings]);
+
   return (
-    <div className="min-h-screen bg-void flex flex-col scanlines relative">
+    <MotionConfig reducedMotion={uiSettings.reducedMotion ? "always" : "never"}>
+      <div
+        className="min-h-screen bg-void flex flex-col relative ui-root"
+        data-theme={uiSettings.theme}
+        data-scanlines={uiSettings.scanlines ? "on" : "off"}
+        data-glow={uiSettings.glow ? "on" : "off"}
+        data-motion={uiSettings.reducedMotion ? "reduced" : "full"}
+        data-density={uiSettings.density}
+        data-presentation={presentationMode ? "on" : "off"}
+        data-panel-style={uiSettings.panelStyle}
+        data-grid-intensity={uiSettings.gridIntensity}
+      >
+      <AnimatePresence>
+        {actionToast && (
+          <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} className="hud-toast">
+            &gt; {actionToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showShortcutHelp && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="shortcut-help">
+            <div className="shortcut-help-panel">
+              <div className="flex items-center justify-between mb-3">
+                <span className="tac-label tac-label-hud">ATAJOS DE TECLADO</span>
+                <button onClick={() => setShowShortcutHelp(false)} className="hud-icon-button">CERRAR</button>
+              </div>
+              {[
+                ["ESPACIO", "Reproducir / pausar"], ["R", "Reiniciar"], ["A / ←", "Retroceder 5 frames"],
+                ["D / →", "Avanzar 5 frames"], ["F", "Recorrer foco de visores"], ["G", "Cambiar distribución"], ["P", "Modo presentación"],
+                ["L", "Abrir/cerrar bitácora"], ["I", "Abrir/cerrar inspector"], ["M", "Activar/silenciar sonido"],
+                ["H", "Mostrar esta ayuda"], ["ESC", "Cerrar paneles y salir de foco"],
+              ].map(([key, label]) => <div key={key} className="shortcut-row"><kbd>{key}</kbd><span>{label}</span></div>)}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <motion.header
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6 }}
-        className="flex items-center justify-between px-4 py-2 border-b border-panel-border bg-obsidian/95 z-50"
+        className="topbar flex items-center justify-between px-4 py-2 border-b border-panel-border bg-obsidian/95 z-50"
       >
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 border border-hud/40 flex items-center justify-center relative">
@@ -105,13 +499,44 @@ export default function App() {
           ))}
         </nav>
 
-        <StatusPanel
-          currentTime={currentTime}
-          currentDistance={currentDistance}
-          closingVelocity={closingVel}
-          outcome={result.outcome}
-          playing={false}
-        />
+        <div className="topbar-actions">
+          <button
+            onClick={() => handlePresentationMode(!presentationMode)}
+            className={`hud-mini-button topbar-control ${presentationMode ? "hud-mini-button-active" : ""}`}
+          >
+            {presentationMode ? "SALIR PRESENTACIÓN" : "PRESENTACIÓN"}
+          </button>
+          <button onClick={handleDemoMode} className="hud-mini-button topbar-control" title="Preparar pantalla para demo">
+            MODO DEMO
+          </button>
+          <button onClick={handleCleanView} className="hud-mini-button topbar-control" title="Dejar área de visores, indicadores y línea de tiempo">
+            VISTA LIMPIA
+          </button>
+          <UiSettingsPanel
+            settings={uiSettings}
+            onChange={handleUiSettingsChange}
+            presentationMode={presentationMode}
+            onPresentationModeChange={handlePresentationMode}
+            onReset={() => {
+              setUiSettings(DEFAULT_UI_SETTINGS);
+              setResetWorkspaceSignal((signal) => signal + 1);
+              try {
+                localStorage.removeItem("taccon-ui-settings");
+                localStorage.removeItem("taccon-workspace-prefs");
+              } catch {}
+              setActionToast("Preferencias UI restablecidas");
+            }}
+            closeSignal={closePanelsSignal}
+          />
+          {showStatusPanel && <StatusPanel
+            currentTime={currentTime}
+            currentDistance={currentDistance}
+            closingVelocity={closingVel}
+            outcome={result.outcome}
+            playing={playing}
+          />}
+          <button onClick={() => setShowStatusPanel((value) => !value)} className="hud-icon-button" title="Mostrar u ocultar KPIs">KPI</button>
+        </div>
       </motion.header>
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -128,7 +553,7 @@ export default function App() {
             >
               <div className="flex-1 flex overflow-hidden">
                 <AnimatePresence>
-                  {showControls && (
+                  {showControls && !presentationMode && (
                     <motion.aside
                       initial={{ width: 0, opacity: 0 }}
                       animate={{ width: 310, opacity: 1 }}
@@ -138,18 +563,22 @@ export default function App() {
                     >
                       <Controls
                         config={config}
-                        onConfigChange={setConfig}
-                        onSimulate={() => { }}
+                        onConfigChange={handleConfigChange}
+                        onSimulate={handleSimulate}
+                        configStatus={configStatus}
+                        runCount={runCount}
+                        onEvent={addEvent}
                       />
                     </motion.aside>
                   )}
                 </AnimatePresence>
 
-                <motion.button
+                {!presentationMode && <motion.button
                   onClick={() => setShowControls((v) => !v)}
                   className="self-start mt-3 px-0.5 py-4 bg-obsidian border border-panel-border border-l-0 text-mist hover:text-hud transition-colors cursor-pointer z-10"
                   whileHover={{ x: 2 }}
                   title={showControls ? "OCULTAR PANEL" : "MOSTRAR PANEL"}
+                  aria-label={showControls ? "Ocultar panel de configuración" : "Mostrar panel de configuración"}
                 >
                   <motion.span
                     animate={{ rotate: showControls ? 0 : 180 }}
@@ -158,90 +587,81 @@ export default function App() {
                   >
                     ◂
                   </motion.span>
-                </motion.button>
+                </motion.button>}
 
-                <motion.div
-                  variants={staggerContainer}
-                  initial="initial"
-                  animate="animate"
-                  className="flex-1 p-3 grid grid-cols-2 grid-rows-[1fr_0.8fr] gap-2 overflow-hidden tactical-grid"
-                >
-                  <motion.div variants={fadeInUp} className="mil-panel mil-panel-amber p-0 flex flex-col min-h-0 relative">
-                    <div className="mil-corners">
-                      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-amber-glow/10">
-                        <div className="w-1.5 h-1.5 bg-amber-glow pulse-dot" />
-                        <span className="tac-label">DISPLAY 01</span>
-                        <span className="text-[8px] text-amber-glow/60 ml-auto tracking-widest">CENITAL 2D</span>
-                      </div>
-                      <div className="flex-1 p-2 graph-container">
-                        <GraphPlaceholder
-                          name="GridView2D"
-                          description="Vista cenital | Grilla táctica"
-                          accent="amber"
-                          result={result}
-                          currentFrame={currentFrame}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  <motion.div variants={fadeInUp} className="mil-panel mil-panel-cyan p-0 flex flex-col min-h-0 relative">
-                    <div className="mil-corners">
-                      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-cyan-glow/10">
-                        <div className="w-1.5 h-1.5 bg-cyan-glow pulse-dot" />
-                        <span className="tac-label">DISPLAY 02</span>
-                        <span className="text-[8px] text-cyan-glow/60 ml-auto tracking-widest">TRAYECTORIA 3D</span>
-                      </div>
-                      <div className="flex-1 p-2 graph-container">
-                        <GraphPlaceholder
-                          name="Trajectory3D"
-                          description="Espacio de misión | Three.js"
-                          accent="cyan"
-                          result={result}
-                          currentFrame={currentFrame}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  <motion.div
-                    variants={fadeInUp}
-                    className="mil-panel p-0 flex flex-col col-span-2 min-h-0 relative"
-                  >
-                    <div className="mil-corners">
-                      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-hud/10">
-                        <div className="w-1.5 h-1.5 bg-hud pulse-dot" />
-                        <span className="tac-label">DISPLAY 03</span>
-                        <span className="text-[8px] text-hud/60 ml-auto tracking-widest">RANGO vs TIEMPO</span>
-                      </div>
-                      <div className="flex-1 p-2 graph-container">
-                        <GraphPlaceholder
-                          name="DistancePlot"
-                          description="Distancia R(t) | Análisis de intercepción"
-                          accent="hud"
-                          result={result}
-                          currentFrame={currentFrame}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                </motion.div>
+                <GraphWorkspace
+                  result={result}
+                  currentFrame={safeFrame}
+                  onEvent={handleUiEvent}
+                  demoSignal={demoSignal}
+                  focusSignal={focusSignal}
+                  layoutSignal={layoutSignal}
+                  escapeSignal={escapeSignal}
+                  resetSignal={resetWorkspaceSignal}
+                  inspectorSignal={inspectorSignal}
+                  cleanSignal={cleanSignal}
+                />
               </div>
 
-              <PlaybackBar
-                currentFrame={currentFrame}
+              <AnimatePresence>
+                {runNotice && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    className="run-notice"
+                  >
+                    <span className="status-chip status-chip-ready">SIM LISTA</span>
+                    <span className="text-bright">{runNotice}</span>
+                    <span className="text-hud ml-auto">CORRIDA #{runCount} · {lastRunTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {showStateStrip && <div className="simulation-state-strip">
+                <div className="state-readout">
+                  <span>CONFIG EDITADA</span>
+                  <strong className={configInvalid ? "text-danger" : configPending ? "text-warning" : "text-mist"}>
+                    dt={config.simulation.dt}s · {configStatus}
+                  </strong>
+                </div>
+                <div className="state-readout">
+                  <span>CONFIG APLICADA</span>
+                  <strong className="text-hud">dt={result.metadata.config.simulation.dt}s · {result.metadata.integrator.toUpperCase()}</strong>
+                </div>
+                <div className="state-readout">
+                  <span>RESULTADO ACTUAL</span>
+                  <strong className="text-cyan-glow">CORRIDA #{runCount} · MOCK · {totalFrames} FRAMES</strong>
+                </div>
+                <span className={configInvalid ? "status-chip status-chip-danger" : configPending ? "status-chip status-chip-warning" : "status-chip status-chip-ready"}>
+                  {configInvalid ? "CONFIG INVÁLIDA" : configPending ? "CONFIG PENDIENTE" : "SIM LISTA"}
+                </span>
+                <span className="text-mist flex-1 text-right">{uiMessage}</span>
+              </div>}
+
+              {showTimeline && <PlaybackBar
+                currentFrame={safeFrame}
                 totalFrames={totalFrames}
                 currentTime={currentTime}
-                totalTime={result.time[totalFrames - 1] ?? 0}
-                playing={false}
-                speed={1}
+                totalTime={result.time[lastFrame] ?? 0}
+                playing={playing}
+                speed={speed}
                 speedPresets={[0.25, 0.5, 1, 2, 4]}
-                onPlay={() => { }}
-                onPause={() => { }}
-                onSeek={(frame) => setCurrentFrame(frame)}
-                onRestart={() => { }}
-                onSpeedChange={() => { }}
-              />
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onSeek={handleSeek}
+                onRestart={handleRestart}
+                onSpeedChange={handleSpeedChange}
+                disabled={playbackDisabled}
+                disabledReason={playbackDisabledReason}
+                onDisabledAttempt={() => setUiMessage(playbackDisabledReason)}
+                eventTime={result.outcome.interceptTime ?? result.outcome.minDistanceTime}
+                eventLabel={result.outcome.intercepted ? "EVENTO DE INTERCEPCIÓN" : "DISTANCIA MÍNIMA"}
+              />}
+              <div className="secondary-controls">
+                <button onClick={() => setShowStateStrip((value) => !value)} className="hud-mini-button">RESUMEN</button>
+                <button onClick={() => setShowTimeline((value) => !value)} className="hud-mini-button">LÍNEA DE TIEMPO</button>
+              </div>
             </motion.div>
           ) : (
             <motion.div
@@ -281,13 +701,21 @@ export default function App() {
       </main>
 
       <div className="px-4 py-1 border-t border-panel-border bg-obsidian/90 flex items-center justify-between text-[8px] text-ash tracking-[0.15em]">
-        <span>SISTEMA OPERATIVO | INTEGRADOR: {result.metadata.integrator.toUpperCase()} | dt={config.simulation.dt}s</span>
+        <span>FUENTE: MOCK | INTEGRADOR: {result.metadata.integrator.toUpperCase()} | dt ACTIVO={result.metadata.config.simulation.dt}s</span>
         <span className="flex items-center gap-2">
           <span className="w-1 h-1 bg-hud pulse-dot inline-block" />
-          SISTEMA NOMINAL
+          CONFIG {configStatus}
         </span>
-        <span>FRAMES: {totalFrames} | MANIOBRA: {config.aircraft.maneuver.toUpperCase()} | GUIADO: {config.missile.guidanceLaw === "proportional_nav" ? "PN N=" + config.missile.navConstant : "PP"}</span>
+        <span>RESULTADO: {totalFrames} FRAMES | BORRADOR dt={config.simulation.dt}s</span>
+        <button onClick={() => setShowShortcutHelp(true)} className="hud-mini-button" title="H · Mostrar ayuda">ATAJOS [H]</button>
       </div>
-    </div>
+      <MissionLog
+        events={missionEvents}
+        onClear={() => setMissionEvents([])}
+        open={missionLogOpen}
+        onOpenChange={setMissionLogOpen}
+      />
+      </div>
+    </MotionConfig>
   );
 }

@@ -21,14 +21,14 @@ export default function StatusPanel({
   playing,
 }: StatusPanelProps) {
   const threatLevel =
-    currentDistance < 50 ? "CRITICAL" :
-      currentDistance < 200 ? "HIGH" :
-        currentDistance < 500 ? "MEDIUM" : "LOW";
+    currentDistance < 50 ? "CRÍTICA" :
+      currentDistance < 200 ? "ALTA" :
+        currentDistance < 500 ? "MEDIA" : "BAJA";
 
   const threatColor =
-    threatLevel === "CRITICAL" ? "text-danger text-glow-threat" :
-      threatLevel === "HIGH" ? "text-caution" :
-        threatLevel === "MEDIUM" ? "text-warning" : "text-hud";
+    threatLevel === "CRÍTICA" ? "text-danger text-glow-threat" :
+      threatLevel === "ALTA" ? "text-caution" :
+        threatLevel === "MEDIA" ? "text-warning" : "text-hud";
 
   return (
     <div className="flex items-center gap-3">
@@ -36,7 +36,7 @@ export default function StatusPanel({
       <div className="flex gap-px">
         {/* Time */}
         <div className="bg-obsidian border border-slate-steel px-3 py-1 min-w-[80px]">
-          <div className="text-[7px] text-mist tracking-[0.2em]">T-ELAPSED</div>
+          <div className="text-[7px] text-mist tracking-[0.2em]">TIEMPO</div>
           <motion.div
             key={currentTime.toFixed(2)}
             initial={{ opacity: 0.6 }}
@@ -50,7 +50,7 @@ export default function StatusPanel({
 
         {/* Range */}
         <div className="bg-obsidian border border-slate-steel px-3 py-1 min-w-[90px]">
-          <div className="text-[7px] text-mist tracking-[0.2em]">RANGE</div>
+          <div className="text-[7px] text-mist tracking-[0.2em]">RANGO</div>
           <motion.div
             key={currentDistance.toFixed(0)}
             initial={{ opacity: 0.6 }}
@@ -80,17 +80,17 @@ export default function StatusPanel({
         {outcome.intercepted ? (
           <div className="badge badge-danger">
             <span className="w-1.5 h-1.5 bg-danger blink-slow inline-block" />
-            INTERCEPT · T+{outcome.interceptTime?.toFixed(2)}s
+            INTERCEPCIÓN · T+{outcome.interceptTime?.toFixed(2)}s
           </div>
         ) : (
           <div className="badge badge-warning">
             <span className="w-1.5 h-1.5 bg-warning inline-block" />
-            MISS · R<sub>min</sub>={outcome.minDistance.toFixed(1)}m
+            SIN IMPACTO · R<sub>min</sub>={outcome.minDistance.toFixed(1)}m
           </div>
         )}
         <div className="flex items-center gap-1.5 text-[8px]">
           <span className={`tracking-[0.15em] ${threatColor}`}>
-            THREAT: {threatLevel}
+            AMENAZA: {threatLevel}
           </span>
         </div>
       </div>
@@ -104,7 +104,7 @@ export default function StatusPanel({
           className="flex items-center gap-1 border border-hud/30 px-2 py-0.5"
         >
           <div className="w-1.5 h-1.5 bg-hud pulse-dot" />
-          <span className="text-[9px] text-hud font-bold tracking-[0.2em] text-glow-hud">REC</span>
+          <span className="text-[9px] text-hud font-bold tracking-[0.2em] text-glow-hud">EN VIVO</span>
         </motion.div>
       )}
     </div>
