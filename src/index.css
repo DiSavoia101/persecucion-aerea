@@ -86,6 +86,7 @@ body {
   --ui-panel-bg: rgba(10, 12, 16, 0.85);
   --ui-grid-size: 48px;
   --ui-glow-strength: 55%;
+  --workspace-target-height: 62vh;
   font-family: var(--ui-font);
   background:
     radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-hud) 4%, transparent) 0%, transparent 60%),
@@ -439,6 +440,18 @@ body {
   min-height: 0;
 }
 
+.ui-root[data-workspace-size="compact"] {
+  --workspace-target-height: 46vh;
+}
+
+.ui-root[data-workspace-size="wide"] {
+  --workspace-target-height: 70vh;
+}
+
+.ui-root[data-workspace-size="maximum"] {
+  --workspace-target-height: calc(100vh - 150px);
+}
+
 .ui-root[data-presentation="on"] .workspace-toolbar {
   border-color: color-mix(in srgb, var(--color-hud) 35%, transparent);
 }
@@ -664,6 +677,49 @@ body {
   background: color-mix(in srgb, var(--color-obsidian) 98%, transparent);
   padding: 12px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+  max-height: min(82vh, 760px);
+  overflow-y: auto;
+}
+
+.simulation-workspace-row {
+  flex: 0 1 var(--workspace-target-height);
+  height: var(--workspace-target-height);
+  min-height: 260px;
+  max-height: calc(100vh - 150px);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panel-toggle-label {
+  display: block;
+  max-width: 9px;
+  font-size: 7px;
+  line-height: 1.15;
+  letter-spacing: 0.05em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.audio-file-control {
+  display: grid;
+  gap: 4px;
+  padding-top: 5px;
+  border-top: 1px solid var(--color-slate-steel);
+}
+
+.audio-file-control > span,
+.preset-picker p {
+  overflow: hidden;
+  color: var(--color-ash);
+  font-size: 7px;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-picker {
+  display: grid;
+  gap: 4px;
 }
 
 .workspace-toolbar,
@@ -1111,6 +1167,11 @@ input:focus-visible,
 }
 
 @media (max-width: 1100px) {
+  .simulation-workspace-row {
+    min-height: 220px;
+    max-height: calc(100vh - 120px);
+  }
+
   .result-inspector {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

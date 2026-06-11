@@ -276,7 +276,12 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
   return (
     <div ref={workspaceRef} className="flex-1 min-w-0 flex flex-col overflow-hidden tactical-grid">
       <div className="workspace-toolbar">
-        <button onClick={() => setShowToolbar((value) => !value)} className="hud-mini-button" title="Mostrar u ocultar controles del área de visores">
+        <button
+          onClick={() => setShowToolbar((value) => !value)}
+          className="hud-mini-button"
+          title={showToolbar ? "Ocultar controles del área de visores" : "Mostrar controles del área de visores"}
+          aria-label={showToolbar ? "Ocultar controles del área de visores" : "Mostrar controles del área de visores"}
+        >
           {showToolbar ? "OCULTAR CONTROLES" : "MOSTRAR CONTROLES"}
         </button>
         <span className="tac-label tac-label-hud">ÁREA DE VISORES</span>
@@ -287,9 +292,10 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
               key={id}
               onClick={() => toggleVisible(id)}
               className={`hud-mini-button ${visible[id] ? "hud-mini-button-active" : ""}`}
-              title={visible[id] && visibleDisplays.length === 1 ? "Debe quedar al menos un visor visible" : undefined}
+              title={visible[id] && visibleDisplays.length === 1 ? "Debe quedar al menos un visor visible" : `${visible[id] ? "Ocultar" : "Mostrar"} ${displayInfo[id].code}`}
+              aria-label={`${visible[id] ? "Ocultar" : "Mostrar"} ${displayInfo[id].code}`}
             >
-              {displayInfo[id].code.replace("VISOR ", "V")}
+              {visible[id] ? `OCULTAR ${displayInfo[id].code.replace("VISOR ", "V")}` : `MOSTRAR ${displayInfo[id].code.replace("VISOR ", "V")}`}
             </button>
           ))}
         </div>
@@ -310,8 +316,8 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
         <button onClick={() => {
           setShowInspector((value) => !value);
           onEvent?.(`Inspector ${showInspector ? "cerrado" : "abierto"}`);
-        }} className={`hud-mini-button ml-auto ${showInspector ? "hud-mini-button-active" : ""}`}>
-          INSPECTOR
+        }} className={`hud-mini-button ml-auto ${showInspector ? "hud-mini-button-active" : ""}`} title={showInspector ? "Ocultar inspector" : "Mostrar inspector"} aria-label={showInspector ? "Ocultar inspector" : "Mostrar inspector"}>
+          {showInspector ? "OCULTAR INSPECTOR" : "MOSTRAR INSPECTOR"}
         </button>
         <button onClick={() => setLayoutLocked((value) => !value)} className={`hud-mini-button ${layoutLocked ? "hud-mini-button-active" : ""}`}>
           {layoutLocked ? "DESBLOQUEAR" : "BLOQUEAR"}
@@ -393,7 +399,7 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
                         RECENTRAR 3D
                       </button>
                     )}
-                    <button onClick={() => toggleVisible(id)} className="hud-icon-button" title="Ocultar">OCULTAR</button>
+                    <button onClick={() => toggleVisible(id)} className="hud-icon-button" title={`Ocultar ${info.code}`} aria-label={`Ocultar ${info.code}`}>OCULTAR VISOR</button>
                   </div>
                 </div>
                 <div className="flex-1 min-h-0 p-2 graph-container">

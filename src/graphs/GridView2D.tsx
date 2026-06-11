@@ -8,23 +8,12 @@
 
 import Plot from "react-plotly.js";
 import type { GraphProps } from "../shared/types";
+import { useGraphTheme, type GraphTheme } from "./useGraphTheme";
 
 /** Tamaño de cada celda del tablero de ajedrez en metros. */
 const CELL_SIZE = 200;
 
 /** Colores coherentes con Trajectory3D.tsx */
-const COLORS = {
-  aircraft: "#ffb02e",
-  missile: "#ff3b3b",
-  los: "#6f86b0",
-  gridLight: "rgba(255,255,255,0.04)",
-  gridDark: "rgba(0,0,0,0)",
-  bg: "#0e1521",
-  paper: "#131c2b",
-  text: "#c9d4e8",
-  axis: "#2e4060",
-} as const;
-
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -33,6 +22,7 @@ function clamp(v: number, lo: number, hi: number): number {
 function buildChessShapes(
   xMin: number, xMax: number,
   yMin: number, yMax: number,
+  colors: GraphTheme,
 ): Partial<Plotly.Shape>[] {
   const shapes: Partial<Plotly.Shape>[] = [];
   const colStart = Math.floor(xMin / CELL_SIZE);
@@ -48,7 +38,7 @@ function buildChessShapes(
         xref: "x", yref: "y",
         x0: c * CELL_SIZE, x1: (c + 1) * CELL_SIZE,
         y0: r * CELL_SIZE, y1: (r + 1) * CELL_SIZE,
-        fillcolor: COLORS.gridLight,
+        fillcolor: colors.gridLight,
         line: { width: 0 },
         layer: "below",
       });
@@ -58,9 +48,10 @@ function buildChessShapes(
 }
 
 export default function GridView2D({ result, currentFrame }: GraphProps) {
+  const colors = useGraphTheme();
   if (!result?.aircraft?.position?.length || !result?.missile?.position?.length) {
     return (
-      <div style={{ color: COLORS.text, padding: 24, background: COLORS.bg, borderRadius: 12 }}>
+      <div style={{ color: colors.text, padding: 24, background: colors.bg, borderRadius: 12 }}>
         Sin datos de simulación.
       </div>
     );
@@ -97,7 +88,7 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
       name: "Rastro avión",
       x: aircraftX,
       y: aircraftY,
-      line: { color: COLORS.aircraft, width: 2, dash: "solid" },
+      line: { color: colors.aircraft, width: 2, dash: "solid" },
       opacity: 0.7,
       hoverinfo: "skip",
     },
@@ -108,7 +99,7 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
       name: "Rastro misil",
       x: missileX,
       y: missileY,
-      line: { color: COLORS.missile, width: 2, dash: "solid" },
+      line: { color: colors.missile, width: 2, dash: "solid" },
       opacity: 0.7,
       hoverinfo: "skip",
     },
@@ -119,7 +110,7 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
       name: "LOS",
       x: [acPos[0], miPos[0]],
       y: [acPos[1], miPos[1]],
-      line: { color: COLORS.los, width: 1.5, dash: "dot" },
+      line: { color: colors.los, width: 1.5, dash: "dot" },
       opacity: 0.75,
       hoverinfo: "skip",
       showlegend: true,
@@ -132,7 +123,7 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
       x: [acPos[0]],
       y: [acPos[1]],
       marker: {
-        color: COLORS.aircraft,
+        color: colors.aircraft,
         size: 14,
         symbol: "triangle-right",
         line: { color: "#fff", width: 1.5 },
@@ -147,7 +138,7 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
       x: [miPos[0]],
       y: [miPos[1]],
       marker: {
-        color: COLORS.missile,
+        color: colors.missile,
         size: 13,
         symbol: "diamond",
         line: { color: "#fff", width: 1.5 },
@@ -160,37 +151,37 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
     autosize: true,
     title: {
       text: `Vista cenital — t = ${result.time[f].toFixed(2)} s`,
-      font: { color: COLORS.text, size: 15 },
+      font: { color: colors.text, size: 15 },
     },
-    paper_bgcolor: COLORS.paper,
-    plot_bgcolor: COLORS.bg,
-    font: { color: COLORS.text, family: "monospace" },
+    paper_bgcolor: colors.paper,
+    plot_bgcolor: colors.bg,
+    font: { color: colors.text, family: "monospace" },
     xaxis: {
-      title: { text: "X (m)", font: { color: COLORS.text } },
+      title: { text: "X (m)", font: { color: colors.text } },
       range: [xMin, xMax],
-      gridcolor: COLORS.axis,
-      zerolinecolor: COLORS.axis,
-      tickfont: { color: COLORS.text },
-      color: COLORS.text,
+      gridcolor: colors.axis,
+      zerolinecolor: colors.axis,
+      tickfont: { color: colors.text },
+      color: colors.text,
     },
     yaxis: {
-      title: { text: "Y (m)", font: { color: COLORS.text } },
+      title: { text: "Y (m)", font: { color: colors.text } },
       range: [yMin, yMax],
-      gridcolor: COLORS.axis,
-      zerolinecolor: COLORS.axis,
-      tickfont: { color: COLORS.text },
-      color: COLORS.text,
+      gridcolor: colors.axis,
+      zerolinecolor: colors.axis,
+      tickfont: { color: colors.text },
+      color: colors.text,
       scaleanchor: "x", // mantiene relación de aspecto 1:1
       scaleratio: 1,
     },
     legend: {
-      font: { color: COLORS.text, size: 12 },
-      bgcolor: "rgba(14,21,33,0.7)",
-      bordercolor: COLORS.axis,
+      font: { color: colors.text, size: 12 },
+      bgcolor: colors.legend,
+      bordercolor: colors.axis,
       borderwidth: 1,
     },
     margin: { t: 50, b: 60, l: 70, r: 20 },
-    shapes: buildChessShapes(xMin, xMax, yMin, yMax),
+    shapes: buildChessShapes(xMin, xMax, yMin, yMax, colors),
   };
 
   return (

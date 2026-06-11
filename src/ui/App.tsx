@@ -21,6 +21,7 @@ type EngineAudioNodes = {
   oscillators: OscillatorNode[];
   gain: GainNode;
 };
+type CustomAudio = { name: string; url: string } | null;
 
 const SIMULATION_VOLUME = {
   low: 0.55,
@@ -39,6 +40,7 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   simulationMotor: true,
   impactSound: true,
   simulationVolume: "medium",
+  workspaceSize: "normal",
   showMissionMilestones: true,
   panelStyle: "tactical",
   gridIntensity: "medium",
@@ -68,6 +70,7 @@ function loadUiSettings(): UiSettings {
       simulationMotor: typeof saved.simulationMotor === "boolean" ? saved.simulationMotor : DEFAULT_UI_SETTINGS.simulationMotor,
       impactSound: typeof saved.impactSound === "boolean" ? saved.impactSound : DEFAULT_UI_SETTINGS.impactSound,
       simulationVolume: ["low", "medium", "high"].includes(saved.simulationVolume ?? "") ? saved.simulationVolume! : DEFAULT_UI_SETTINGS.simulationVolume,
+      workspaceSize: ["compact", "normal", "wide", "maximum"].includes(saved.workspaceSize ?? "") ? saved.workspaceSize! : DEFAULT_UI_SETTINGS.workspaceSize,
       showMissionMilestones: typeof saved.showMissionMilestones === "boolean" ? saved.showMissionMilestones : DEFAULT_UI_SETTINGS.showMissionMilestones,
     };
   } catch {
@@ -124,11 +127,14 @@ export default function App() {
   const [showStatusPanel, setShowStatusPanel] = useState(true);
   const [showTimeline, setShowTimeline] = useState(true);
   const [showStateStrip, setShowStateStrip] = useState(true);
+  const [customStartAudio, setCustomStartAudio] = useState<CustomAudio>(null);
+  const [customImpactAudio, setCustomImpactAudio] = useState<CustomAudio>(null);
   const lastTimestampRef = useRef<number | null>(null);
   const elapsedRef = useRef(0);
   const eventIdRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const engineAudioRef = useRef<EngineAudioNodes | null>(null);
+  const activeCustomAudioRef = useRef<HTMLAudioElement | null>(null);
   const endNotifiedRef = useRef(false);
   const interceptSoundPlayedRef = useRef(false);
   const lastConfigLogRef = useRef("");
@@ -174,7 +180,7 @@ export default function App() {
     }
   }, [uiSettings.sound]);
 
-  const playSimulationSound = useCallback((kind: "start" | "intercept" | "end") => {
+  const playFallbackSimulationSound = useCallback((kind: "start" | "intercept" | "end") => {
     if (!uiSettings.simulationSound) return;
     if (kind === "intercept" && !uiSettings.impactSound) return;
     try {
@@ -228,13 +234,40 @@ export default function App() {
       gain.gain.setValueAtTime(0.035 * volume, context.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration);
       oscillator.connect(gain);
-      gain.connect(context.destination);
       oscillator.start();
       oscillator.stop(context.currentTime + duration);
     } catch {
       setActionToast("Audio de simulación no disponible");
     }
   }, [uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
+
+  const playSimulationSound = useCallback((kind: "start" | "intercept" | "end") => {
+    if (!uiSettings.simulationSound) return;
+    if (kind === "intercept" && !uiSettings.impactSound) return;
+    const custom = kind === "start" ? customStartAudio : kind === "intercept" ? customImpactAudio : null;
+    if (!custom) {
+      playFallbackSimulationSound(kind);
+      return;
+    }
+
+    try {
+      activeCustomAudioRef.current?.pause();
+      const audio = new Audio(custom.url);
+      audio.volume = Math.min(1, SIMULATION_VOLUME[uiSettings.simulationVolume] * 0.7);
+      activeCustomAudioRef.current = audio;
+      audio.onended = () => {
+        if (activeCustomAudioRef.current === audio) activeCustomAudioRef.current = null;
+      };
+      audio.onerror = () => {
+        if (activeCustomAudioRef.current === audio) activeCustomAudioRef.current = null;
+        setActionToast(`No se pudo reproducir ${custom.name}; usando fallback`);
+        playFallbackSimulationSound(kind);
+      };
+      void audio.play().catch(() => audio.onerror?.(new Event("error")));
+    } catch {
+      playFallbackSimulationSound(kind);
+    }
+  }, [customImpactAudio, customStartAudio, playFallbackSimulationSound, uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
 
   const stopEngineSound = useCallback(() => {
     const engine = engineAudioRef.current;
@@ -300,8 +333,48 @@ export default function App() {
 
   useEffect(() => () => {
     stopEngineSound();
+    activeCustomAudioRef.current?.pause();
     void audioContextRef.current?.close();
   }, [stopEngineSound]);
+
+  useEffect(() => () => {
+    if (customStartAudio) URL.revokeObjectURL(customStartAudio.url);
+  }, [customStartAudio]);
+
+  useEffect(() => () => {
+    if (customImpactAudio) URL.revokeObjectURL(customImpactAudio.url);
+  }, [customImpactAudio]);
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    const timeoutId = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 180);
+    return () => {
+      cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [uiSettings.workspaceSize]);
+
+  const updateCustomAudio = useCallback((
+    file: File | null,
+    current: CustomAudio,
+    setAudio: (audio: CustomAudio) => void,
+    label: string,
+  ) => {
+    if (file && !file.type.startsWith("audio/")) {
+      setActionToast("El archivo seleccionado no es un audio compatible");
+      return;
+    }
+    if (current) URL.revokeObjectURL(current.url);
+    activeCustomAudioRef.current?.pause();
+    activeCustomAudioRef.current = null;
+    if (!file) {
+      setAudio(null);
+      setActionToast(`${label} personalizado restablecido`);
+      return;
+    }
+    setAudio({ name: file.name, url: URL.createObjectURL(file) });
+    setActionToast(`${label} personalizado cargado: ${file.name}`);
+  }, []);
 
   useEffect(() => {
     const shouldPlayEngine =
@@ -510,6 +583,9 @@ export default function App() {
     if (next.simulationSound !== uiSettings.simulationSound) {
       setActionToast(`Sonido de simulación ${next.simulationSound ? "activado" : "silenciado"}`);
     }
+    if (next.workspaceSize !== uiSettings.workspaceSize) {
+      setActionToast(`Tamaño de visores: ${next.workspaceSize === "compact" ? "compacto" : next.workspaceSize === "normal" ? "normal" : next.workspaceSize === "wide" ? "amplio" : "máximo"}`);
+    }
     setUiSettings(next);
   }, [uiSettings]);
 
@@ -592,6 +668,7 @@ export default function App() {
         data-presentation={presentationMode ? "on" : "off"}
         data-panel-style={uiSettings.panelStyle}
         data-grid-intensity={uiSettings.gridIntensity}
+        data-workspace-size={uiSettings.workspaceSize}
       >
       <AnimatePresence>
         {actionToast && (
@@ -683,8 +760,10 @@ export default function App() {
           <button
             onClick={() => handlePresentationMode(!presentationMode)}
             className={`hud-mini-button topbar-control ${presentationMode ? "hud-mini-button-active" : ""}`}
+            title={presentationMode ? "Salir del modo presentación" : "Activar modo presentación"}
+            aria-label={presentationMode ? "Salir del modo presentación" : "Activar modo presentación"}
           >
-            {presentationMode ? "SALIR PRESENTACIÓN" : "PRESENTACIÓN"}
+            {presentationMode ? "SALIR PRESENTACIÓN" : "ACTIVAR PRESENTACIÓN"}
           </button>
           <button onClick={handleDemoMode} className="hud-mini-button topbar-control" title="Preparar pantalla para demo">
             MODO DEMO
@@ -697,6 +776,10 @@ export default function App() {
             onChange={handleUiSettingsChange}
             presentationMode={presentationMode}
             onPresentationModeChange={handlePresentationMode}
+            customStartAudioName={customStartAudio?.name}
+            customImpactAudioName={customImpactAudio?.name}
+            onCustomStartAudio={(file) => updateCustomAudio(file, customStartAudio, setCustomStartAudio, "Audio de arranque")}
+            onCustomImpactAudio={(file) => updateCustomAudio(file, customImpactAudio, setCustomImpactAudio, "Audio de explosión")}
             onReset={() => {
               setUiSettings(DEFAULT_UI_SETTINGS);
               setResetWorkspaceSignal((signal) => signal + 1);
@@ -715,7 +798,14 @@ export default function App() {
             outcome={result.outcome}
             playing={playing}
           />}
-          <button onClick={() => setShowStatusPanel((value) => !value)} className="hud-icon-button" title="Mostrar u ocultar KPIs">KPI</button>
+          <button
+            onClick={() => setShowStatusPanel((value) => !value)}
+            className="hud-icon-button"
+            title={showStatusPanel ? "Ocultar KPIs" : "Mostrar KPIs"}
+            aria-label={showStatusPanel ? "Ocultar KPIs" : "Mostrar KPIs"}
+          >
+            {showStatusPanel ? "OCULTAR KPI" : "MOSTRAR KPI"}
+          </button>
         </div>
       </motion.header>
 
@@ -731,7 +821,7 @@ export default function App() {
               transition={{ duration: 0.25 }}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <div className="flex-1 flex overflow-hidden">
+              <div className="simulation-workspace-row flex overflow-hidden">
                 <AnimatePresence>
                   {showControls && !presentationMode && (
                     <motion.aside
@@ -760,13 +850,7 @@ export default function App() {
                   title={showControls ? "OCULTAR PANEL" : "MOSTRAR PANEL"}
                   aria-label={showControls ? "Ocultar panel de configuración" : "Mostrar panel de configuración"}
                 >
-                  <motion.span
-                    animate={{ rotate: showControls ? 0 : 180 }}
-                    transition={{ duration: 0.2 }}
-                    className="block text-[9px]"
-                  >
-                    ◂
-                  </motion.span>
+                  <span className="panel-toggle-label">{showControls ? "OCULTAR CONTROLES" : "MOSTRAR CONTROLES"}</span>
                 </motion.button>}
 
                 <GraphWorkspace
@@ -846,13 +930,19 @@ export default function App() {
                 onDisabledAttempt={() => setUiMessage(playbackDisabledReason)}
               />}
               <div className="secondary-controls">
-                <button onClick={() => setShowStateStrip((value) => !value)} className="hud-mini-button">RESUMEN</button>
-                <button onClick={() => setShowTimeline((value) => !value)} className="hud-mini-button">LÍNEA DE TIEMPO</button>
+                <button onClick={() => setShowStateStrip((value) => !value)} className="hud-mini-button" title={showStateStrip ? "Ocultar resumen" : "Mostrar resumen"} aria-label={showStateStrip ? "Ocultar resumen" : "Mostrar resumen"}>
+                  {showStateStrip ? "OCULTAR RESUMEN" : "MOSTRAR RESUMEN"}
+                </button>
+                <button onClick={() => setShowTimeline((value) => !value)} className="hud-mini-button" title={showTimeline ? "Ocultar línea de tiempo" : "Mostrar línea de tiempo"} aria-label={showTimeline ? "Ocultar línea de tiempo" : "Mostrar línea de tiempo"}>
+                  {showTimeline ? "OCULTAR LÍNEA DE TIEMPO" : "MOSTRAR LÍNEA DE TIEMPO"}
+                </button>
                 <button
                   onClick={() => handleUiSettingsChange({ ...uiSettings, showMissionMilestones: !uiSettings.showMissionMilestones })}
                   className={`hud-mini-button ${uiSettings.showMissionMilestones ? "hud-mini-button-active" : ""}`}
+                  title={uiSettings.showMissionMilestones ? "Ocultar hitos" : "Mostrar hitos"}
+                  aria-label={uiSettings.showMissionMilestones ? "Ocultar hitos" : "Mostrar hitos"}
                 >
-                  {uiSettings.showMissionMilestones ? "OCULTAR HITOS" : "HITOS"}
+                  {uiSettings.showMissionMilestones ? "OCULTAR HITOS" : "MOSTRAR HITOS"}
                 </button>
               </div>
             </motion.div>

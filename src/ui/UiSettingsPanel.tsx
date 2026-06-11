@@ -5,6 +5,7 @@ export type UiDensity = "compact" | "normal" | "presentation";
 export type PanelStyle = "tactical" | "glass" | "blueprint" | "crt" | "minimal" | "alert";
 export type GridIntensity = "low" | "medium" | "high";
 export type SimulationVolume = "low" | "medium" | "high";
+export type WorkspaceSize = "compact" | "normal" | "wide" | "maximum";
 
 export interface UiSettings {
   theme: UiTheme;
@@ -17,6 +18,7 @@ export interface UiSettings {
   simulationMotor: boolean;
   impactSound: boolean;
   simulationVolume: SimulationVolume;
+  workspaceSize: WorkspaceSize;
   showMissionMilestones: boolean;
   panelStyle: PanelStyle;
   gridIntensity: GridIntensity;
@@ -28,6 +30,10 @@ interface UiSettingsPanelProps {
   presentationMode: boolean;
   onPresentationModeChange: (enabled: boolean) => void;
   onReset: () => void;
+  customStartAudioName?: string;
+  customImpactAudioName?: string;
+  onCustomStartAudio: (file: File | null) => void;
+  onCustomImpactAudio: (file: File | null) => void;
   closeSignal?: number;
 }
 
@@ -54,6 +60,10 @@ export default function UiSettingsPanel({
   presentationMode,
   onPresentationModeChange,
   onReset,
+  customStartAudioName,
+  customImpactAudioName,
+  onCustomStartAudio,
+  onCustomImpactAudio,
   closeSignal = 0,
 }: UiSettingsPanelProps) {
   const [open, setOpen] = useState(false);
@@ -69,8 +79,10 @@ export default function UiSettingsPanel({
         onClick={() => setOpen((value) => !value)}
         className="hud-mini-button"
         aria-expanded={open}
+        aria-label={open ? "Ocultar preferencias visuales" : "Mostrar preferencias visuales"}
+        title={open ? "Ocultar preferencias visuales" : "Mostrar preferencias visuales"}
       >
-        VISUAL
+        {open ? "OCULTAR PREFERENCIAS" : "MOSTRAR PREFERENCIAS"}
       </button>
 
       {open && (
@@ -95,6 +107,14 @@ export default function UiSettingsPanel({
               </button>
             ))}
           </div>
+
+          <label className="mt-3">TAMAÑO DEL ÁREA DE VISORES</label>
+          <select value={settings.workspaceSize} onChange={(event) => patch({ workspaceSize: event.target.value as WorkspaceSize })}>
+            <option value="compact">VISORES COMPACTOS</option>
+            <option value="normal">VISORES NORMAL</option>
+            <option value="wide">VISORES AMPLIOS</option>
+            <option value="maximum">VISORES MÁXIMO</option>
+          </select>
 
           <label className="mt-3">ESTILO DE PANEL</label>
           <select value={settings.panelStyle} onChange={(event) => patch({ panelStyle: event.target.value as PanelStyle })}>
@@ -137,12 +157,60 @@ export default function UiSettingsPanel({
                 </button>
               ))}
             </div>
-            <Toggle label="HITOS DE MISIÓN" enabled={settings.showMissionMilestones} onChange={(showMissionMilestones) => patch({ showMissionMilestones })} />
-            <Toggle label="MODO PRESENTACIÓN" enabled={presentationMode} onChange={onPresentationModeChange} />
+            <AudioFileControl
+              label="AUDIO DE ARRANQUE"
+              fileName={customStartAudioName}
+              onChange={onCustomStartAudio}
+              resetLabel="RESTABLECER ARRANQUE"
+            />
+            <AudioFileControl
+              label="AUDIO DE EXPLOSIÓN"
+              fileName={customImpactAudioName}
+              onChange={onCustomImpactAudio}
+              resetLabel="RESTABLECER EXPLOSIÓN"
+            />
+            <Toggle label={settings.showMissionMilestones ? "OCULTAR HITOS DE MISIÓN" : "MOSTRAR HITOS DE MISIÓN"} enabled={settings.showMissionMilestones} onChange={(showMissionMilestones) => patch({ showMissionMilestones })} />
+            <Toggle label={presentationMode ? "SALIR DE PRESENTACIÓN" : "MOSTRAR PRESENTACIÓN"} enabled={presentationMode} onChange={onPresentationModeChange} />
           </div>
           <button onClick={onReset} className="hud-mini-button w-full mt-3">RESTABLECER UI</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function AudioFileControl({
+  label,
+  fileName,
+  onChange,
+  resetLabel,
+}: {
+  label: string;
+  fileName?: string;
+  onChange: (file: File | null) => void;
+  resetLabel: string;
+}) {
+  return (
+    <div className="audio-file-control">
+      <label>{label}</label>
+      <span title={fileName}>{fileName ?? "Fallback Web Audio"}</span>
+      <div className="grid grid-cols-2 gap-1">
+        <label className="hud-mini-button text-center cursor-pointer">
+          CARGAR AUDIO
+          <input
+            type="file"
+            accept="audio/*"
+            className="sr-only"
+            onChange={(event) => {
+              onChange(event.target.files?.[0] ?? null);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <button type="button" className="hud-mini-button" onClick={() => onChange(null)} disabled={!fileName}>
+          {resetLabel}
+        </button>
+      </div>
     </div>
   );
 }
