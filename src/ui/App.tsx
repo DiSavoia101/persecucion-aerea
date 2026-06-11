@@ -21,7 +21,12 @@ type EngineAudioNodes = {
   oscillators: OscillatorNode[];
   gain: GainNode;
 };
-type CustomAudio = { name: string; url: string } | null;
+type AlarmAudioNodes = {
+  oscillators: OscillatorNode[];
+  gain: GainNode;
+};
+
+const ALARM_LEAD_SECONDS = 1.5;
 
 const SIMULATION_VOLUME = {
   low: 0.55,
@@ -39,6 +44,7 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   simulationSound: false,
   simulationMotor: true,
   impactSound: true,
+  alarmSound: true,
   simulationVolume: "medium",
   workspaceSize: "normal",
   showMissionMilestones: true,
@@ -69,6 +75,7 @@ function loadUiSettings(): UiSettings {
       simulationSound: typeof saved.simulationSound === "boolean" ? saved.simulationSound : DEFAULT_UI_SETTINGS.simulationSound,
       simulationMotor: typeof saved.simulationMotor === "boolean" ? saved.simulationMotor : DEFAULT_UI_SETTINGS.simulationMotor,
       impactSound: typeof saved.impactSound === "boolean" ? saved.impactSound : DEFAULT_UI_SETTINGS.impactSound,
+      alarmSound: typeof saved.alarmSound === "boolean" ? saved.alarmSound : DEFAULT_UI_SETTINGS.alarmSound,
       simulationVolume: ["low", "medium", "high"].includes(saved.simulationVolume ?? "") ? saved.simulationVolume! : DEFAULT_UI_SETTINGS.simulationVolume,
       workspaceSize: ["compact", "normal", "wide", "maximum"].includes(saved.workspaceSize ?? "") ? saved.workspaceSize! : DEFAULT_UI_SETTINGS.workspaceSize,
       showMissionMilestones: typeof saved.showMissionMilestones === "boolean" ? saved.showMissionMilestones : DEFAULT_UI_SETTINGS.showMissionMilestones,
@@ -127,16 +134,17 @@ export default function App() {
   const [showStatusPanel, setShowStatusPanel] = useState(true);
   const [showTimeline, setShowTimeline] = useState(true);
   const [showStateStrip, setShowStateStrip] = useState(true);
-  const [customStartAudio, setCustomStartAudio] = useState<CustomAudio>(null);
-  const [customImpactAudio, setCustomImpactAudio] = useState<CustomAudio>(null);
   const lastTimestampRef = useRef<number | null>(null);
   const elapsedRef = useRef(0);
   const eventIdRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const engineAudioRef = useRef<EngineAudioNodes | null>(null);
-  const activeCustomAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeEventAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeAlarmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const alarmFallbackRef = useRef<AlarmAudioNodes | null>(null);
   const endNotifiedRef = useRef(false);
   const interceptSoundPlayedRef = useRef(false);
+  const alarmSoundPlayedRef = useRef(false);
   const lastConfigLogRef = useRef("");
   const lastLoggedSeekRef = useRef(-999);
 
@@ -150,6 +158,11 @@ export default function App() {
   const interceptFrame = useMemo(() => {
     if (!result.outcome.intercepted || result.outcome.interceptTime == null) return -1;
     return result.time.findIndex((time) => time >= result.outcome.interceptTime!);
+  }, [result]);
+  const alarmFrame = useMemo(() => {
+    if (!result.outcome.intercepted || result.outcome.interceptTime == null) return -1;
+    const alarmTime = Math.max(result.time[0] ?? 0, result.outcome.interceptTime - ALARM_LEAD_SECONDS);
+    return result.time.findIndex((time) => time >= alarmTime);
   }, [result]);
   const configErrors = validateConfig(config);
   const configInvalid = configErrors.length > 0;
@@ -180,15 +193,55 @@ export default function App() {
     }
   }, [uiSettings.sound]);
 
-  const playFallbackSimulationSound = useCallback((kind: "start" | "intercept" | "end") => {
+  const stopAlarmSound = useCallback(() => {
+    activeAlarmAudioRef.current?.pause();
+    activeAlarmAudioRef.current = null;
+    const fallback = alarmFallbackRef.current;
+    alarmFallbackRef.current = null;
+    if (!fallback) return;
+    fallback.gain.gain.value = 0;
+    fallback.oscillators.forEach((oscillator) => {
+      try {
+        oscillator.stop();
+      } catch {
+      }
+    });
+  }, []);
+
+  const playFallbackSimulationSound = useCallback((kind: "start" | "alarm" | "intercept" | "end") => {
     if (!uiSettings.simulationSound) return;
-    if (kind === "intercept" && !uiSettings.impactSound) return;
+    if ((kind === "alarm" || kind === "intercept") && !uiSettings.impactSound) return;
+    if (kind === "alarm" && !uiSettings.alarmSound) return;
     try {
       const AudioContextConstructor = window.AudioContext;
       const context = audioContextRef.current ?? new AudioContextConstructor();
       audioContextRef.current = context;
       if (context.state === "suspended") void context.resume();
       const volume = SIMULATION_VOLUME[uiSettings.simulationVolume];
+
+      if (kind === "alarm") {
+        stopAlarmSound();
+        const masterGain = context.createGain();
+        masterGain.gain.value = 0.09 * volume;
+        masterGain.connect(context.destination);
+        const oscillators = [0, 0.28, 0.56].map((offset) => {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          const startAt = context.currentTime + offset;
+          oscillator.type = "square";
+          oscillator.frequency.value = 760;
+          gain.gain.setValueAtTime(0.0001, startAt);
+          gain.gain.exponentialRampToValueAtTime(0.5, startAt + 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.16);
+          oscillator.connect(gain);
+          gain.connect(masterGain);
+          oscillator.start(startAt);
+          oscillator.stop(startAt + 0.18);
+          return oscillator;
+        });
+        alarmFallbackRef.current = { oscillators, gain: masterGain };
+        return;
+      }
 
       if (kind === "intercept") {
         const duration = 0.5;
@@ -234,40 +287,51 @@ export default function App() {
       gain.gain.setValueAtTime(0.035 * volume, context.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration);
       oscillator.connect(gain);
+      gain.connect(context.destination);
       oscillator.start();
       oscillator.stop(context.currentTime + duration);
     } catch {
       setActionToast("Audio de simulación no disponible");
     }
-  }, [uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
+  }, [stopAlarmSound, uiSettings.alarmSound, uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
 
-  const playSimulationSound = useCallback((kind: "start" | "intercept" | "end") => {
+  const playSimulationSound = useCallback((kind: "start" | "alarm" | "intercept" | "end") => {
     if (!uiSettings.simulationSound) return;
-    if (kind === "intercept" && !uiSettings.impactSound) return;
-    const custom = kind === "start" ? customStartAudio : kind === "intercept" ? customImpactAudio : null;
-    if (!custom) {
+    if ((kind === "alarm" || kind === "intercept") && !uiSettings.impactSound) return;
+    if (kind === "alarm" && !uiSettings.alarmSound) return;
+    const staticPath =
+      kind === "start" ? "/audio/startup.wav" :
+      kind === "alarm" ? "/audio/alarm.wav" :
+      kind === "intercept" ? "/audio/explosion.wav" :
+      null;
+    if (!staticPath) {
       playFallbackSimulationSound(kind);
       return;
     }
 
     try {
-      activeCustomAudioRef.current?.pause();
-      const audio = new Audio(custom.url);
-      audio.volume = Math.min(1, SIMULATION_VOLUME[uiSettings.simulationVolume] * 0.7);
-      activeCustomAudioRef.current = audio;
-      audio.onended = () => {
-        if (activeCustomAudioRef.current === audio) activeCustomAudioRef.current = null;
-      };
-      audio.onerror = () => {
-        if (activeCustomAudioRef.current === audio) activeCustomAudioRef.current = null;
-        setActionToast(`No se pudo reproducir ${custom.name}; usando fallback`);
+      const audioRef = kind === "alarm" ? activeAlarmAudioRef : activeEventAudioRef;
+      audioRef.current?.pause();
+      if (kind === "alarm") stopAlarmSound();
+      const audio = new Audio(staticPath);
+      let fallbackPlayed = false;
+      const useFallback = () => {
+        if (fallbackPlayed || audioRef.current !== audio) return;
+        fallbackPlayed = true;
+        audioRef.current = null;
         playFallbackSimulationSound(kind);
       };
-      void audio.play().catch(() => audio.onerror?.(new Event("error")));
+      audio.volume = Math.min(1, SIMULATION_VOLUME[uiSettings.simulationVolume] * 0.7);
+      audioRef.current = audio;
+      audio.onended = () => {
+        if (audioRef.current === audio) audioRef.current = null;
+      };
+      audio.onerror = useFallback;
+      void audio.play().catch(useFallback);
     } catch {
       playFallbackSimulationSound(kind);
     }
-  }, [customImpactAudio, customStartAudio, playFallbackSimulationSound, uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
+  }, [playFallbackSimulationSound, stopAlarmSound, uiSettings.alarmSound, uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
 
   const stopEngineSound = useCallback(() => {
     const engine = engineAudioRef.current;
@@ -333,17 +397,19 @@ export default function App() {
 
   useEffect(() => () => {
     stopEngineSound();
-    activeCustomAudioRef.current?.pause();
+    stopAlarmSound();
+    activeEventAudioRef.current?.pause();
     void audioContextRef.current?.close();
-  }, [stopEngineSound]);
+  }, [stopAlarmSound, stopEngineSound]);
 
-  useEffect(() => () => {
-    if (customStartAudio) URL.revokeObjectURL(customStartAudio.url);
-  }, [customStartAudio]);
-
-  useEffect(() => () => {
-    if (customImpactAudio) URL.revokeObjectURL(customImpactAudio.url);
-  }, [customImpactAudio]);
+  useEffect(() => {
+    if (playing && uiSettings.simulationSound && uiSettings.impactSound && uiSettings.alarmSound) return;
+    stopAlarmSound();
+    if (!uiSettings.simulationSound) {
+      activeEventAudioRef.current?.pause();
+      activeEventAudioRef.current = null;
+    }
+  }, [playing, stopAlarmSound, uiSettings.alarmSound, uiSettings.impactSound, uiSettings.simulationSound]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
@@ -354,27 +420,6 @@ export default function App() {
     };
   }, [uiSettings.workspaceSize]);
 
-  const updateCustomAudio = useCallback((
-    file: File | null,
-    current: CustomAudio,
-    setAudio: (audio: CustomAudio) => void,
-    label: string,
-  ) => {
-    if (file && !file.type.startsWith("audio/")) {
-      setActionToast("El archivo seleccionado no es un audio compatible");
-      return;
-    }
-    if (current) URL.revokeObjectURL(current.url);
-    activeCustomAudioRef.current?.pause();
-    activeCustomAudioRef.current = null;
-    if (!file) {
-      setAudio(null);
-      setActionToast(`${label} personalizado restablecido`);
-      return;
-    }
-    setAudio({ name: file.name, url: URL.createObjectURL(file) });
-    setActionToast(`${label} personalizado cargado: ${file.name}`);
-  }, []);
 
   useEffect(() => {
     const shouldPlayEngine =
@@ -463,6 +508,16 @@ export default function App() {
         elapsedRef.current -= framesToAdvance * frameDuration;
         setCurrentFrame((frame) => {
           const nextFrame = Math.min(frame + framesToAdvance, lastFrame);
+          const crossedAlarm =
+            alarmFrame >= 0 &&
+            interceptFrame >= 0 &&
+            frame < interceptFrame &&
+            nextFrame >= alarmFrame &&
+            !alarmSoundPlayedRef.current;
+          if (crossedAlarm) {
+            alarmSoundPlayedRef.current = true;
+            playSimulationSound("alarm");
+          }
           const crossedIntercept =
             interceptFrame >= 0 &&
             frame < interceptFrame &&
@@ -470,6 +525,7 @@ export default function App() {
             !interceptSoundPlayedRef.current;
           if (crossedIntercept) {
             interceptSoundPlayedRef.current = true;
+            stopAlarmSound();
             playSimulationSound("intercept");
           }
           if (nextFrame >= lastFrame) {
@@ -485,7 +541,7 @@ export default function App() {
 
     animationFrameId = requestAnimationFrame(advance);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [interceptFrame, lastFrame, playSimulationSound, playing, result.metadata.config.simulation.dt, speed, totalFrames]);
+  }, [alarmFrame, interceptFrame, lastFrame, playSimulationSound, playing, result.metadata.config.simulation.dt, speed, stopAlarmSound, totalFrames]);
 
   const handleSimulate = useCallback((nextConfig: SimulationConfig) => {
     setConfig(structuredClone(nextConfig));
@@ -495,6 +551,7 @@ export default function App() {
     lastConfigLogRef.current = "";
     lastLoggedSeekRef.current = -999;
     interceptSoundPlayedRef.current = false;
+    alarmSoundPlayedRef.current = false;
     setRunCount((count) => count + 1);
     setLastRunTime(new Date());
     setRunNotice("Simulación ejecutada · frame reiniciado · listo para reproducir");
@@ -531,6 +588,7 @@ export default function App() {
     setCurrentFrame((frame) => {
       if (frame >= lastFrame) {
         interceptSoundPlayedRef.current = false;
+        alarmSoundPlayedRef.current = false;
         return 0;
       }
       return frame;
@@ -552,6 +610,7 @@ export default function App() {
     setCurrentFrame(0);
     setPlaying(false);
     interceptSoundPlayedRef.current = false;
+    alarmSoundPlayedRef.current = false;
     addEvent("Línea de tiempo reiniciada · frame 0");
     playTone(420);
   }, [addEvent, playTone]);
@@ -560,11 +619,13 @@ export default function App() {
     const nextFrame = clampFrame(frame, lastFrame);
     setCurrentFrame(nextFrame);
     setPlaying(false);
+    if (interceptFrame >= 0 && nextFrame < interceptFrame) alarmSoundPlayedRef.current = false;
+    if (interceptFrame >= 0 && nextFrame < interceptFrame) interceptSoundPlayedRef.current = false;
     if (nextFrame === 0 || nextFrame === lastFrame || Math.abs(nextFrame - lastLoggedSeekRef.current) >= 5) {
       lastLoggedSeekRef.current = nextFrame;
       addEvent(`Frame seleccionado: ${nextFrame}/${lastFrame}`, "info", false);
     }
-  }, [addEvent, lastFrame]);
+  }, [addEvent, interceptFrame, lastFrame]);
 
   const handleSpeedChange = useCallback((nextSpeed: number) => {
     setSpeed(nextSpeed);
@@ -776,10 +837,6 @@ export default function App() {
             onChange={handleUiSettingsChange}
             presentationMode={presentationMode}
             onPresentationModeChange={handlePresentationMode}
-            customStartAudioName={customStartAudio?.name}
-            customImpactAudioName={customImpactAudio?.name}
-            onCustomStartAudio={(file) => updateCustomAudio(file, customStartAudio, setCustomStartAudio, "Audio de arranque")}
-            onCustomImpactAudio={(file) => updateCustomAudio(file, customImpactAudio, setCustomImpactAudio, "Audio de explosión")}
             onReset={() => {
               setUiSettings(DEFAULT_UI_SETTINGS);
               setResetWorkspaceSignal((signal) => signal + 1);

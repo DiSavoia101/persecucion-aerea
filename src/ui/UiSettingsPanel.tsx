@@ -17,6 +17,7 @@ export interface UiSettings {
   simulationSound: boolean;
   simulationMotor: boolean;
   impactSound: boolean;
+  alarmSound: boolean;
   simulationVolume: SimulationVolume;
   workspaceSize: WorkspaceSize;
   showMissionMilestones: boolean;
@@ -30,10 +31,6 @@ interface UiSettingsPanelProps {
   presentationMode: boolean;
   onPresentationModeChange: (enabled: boolean) => void;
   onReset: () => void;
-  customStartAudioName?: string;
-  customImpactAudioName?: string;
-  onCustomStartAudio: (file: File | null) => void;
-  onCustomImpactAudio: (file: File | null) => void;
   closeSignal?: number;
 }
 
@@ -60,10 +57,6 @@ export default function UiSettingsPanel({
   presentationMode,
   onPresentationModeChange,
   onReset,
-  customStartAudioName,
-  customImpactAudioName,
-  onCustomStartAudio,
-  onCustomImpactAudio,
   closeSignal = 0,
 }: UiSettingsPanelProps) {
   const [open, setOpen] = useState(false);
@@ -145,6 +138,7 @@ export default function UiSettingsPanel({
             <Toggle label="SONIDO SIMULACIÓN" enabled={settings.simulationSound} onChange={(simulationSound) => patch({ simulationSound })} />
             <Toggle label="MOTOR" enabled={settings.simulationMotor} onChange={(simulationMotor) => patch({ simulationMotor })} />
             <Toggle label="EVENTOS DE IMPACTO" enabled={settings.impactSound} onChange={(impactSound) => patch({ impactSound })} />
+            <Toggle label="ALARMA PREVIA" enabled={settings.alarmSound} onChange={(alarmSound) => patch({ alarmSound })} />
             <label className="mt-2">VOLUMEN SIMULACIÓN</label>
             <div className="grid grid-cols-3 gap-1">
               {(["low", "medium", "high"] as SimulationVolume[]).map((volume) => (
@@ -157,60 +151,12 @@ export default function UiSettingsPanel({
                 </button>
               ))}
             </div>
-            <AudioFileControl
-              label="AUDIO DE ARRANQUE"
-              fileName={customStartAudioName}
-              onChange={onCustomStartAudio}
-              resetLabel="RESTABLECER ARRANQUE"
-            />
-            <AudioFileControl
-              label="AUDIO DE EXPLOSIÓN"
-              fileName={customImpactAudioName}
-              onChange={onCustomImpactAudio}
-              resetLabel="RESTABLECER EXPLOSIÓN"
-            />
             <Toggle label={settings.showMissionMilestones ? "OCULTAR HITOS DE MISIÓN" : "MOSTRAR HITOS DE MISIÓN"} enabled={settings.showMissionMilestones} onChange={(showMissionMilestones) => patch({ showMissionMilestones })} />
             <Toggle label={presentationMode ? "SALIR DE PRESENTACIÓN" : "MOSTRAR PRESENTACIÓN"} enabled={presentationMode} onChange={onPresentationModeChange} />
           </div>
           <button onClick={onReset} className="hud-mini-button w-full mt-3">RESTABLECER UI</button>
         </div>
       )}
-    </div>
-  );
-}
-
-function AudioFileControl({
-  label,
-  fileName,
-  onChange,
-  resetLabel,
-}: {
-  label: string;
-  fileName?: string;
-  onChange: (file: File | null) => void;
-  resetLabel: string;
-}) {
-  return (
-    <div className="audio-file-control">
-      <label>{label}</label>
-      <span title={fileName}>{fileName ?? "Fallback Web Audio"}</span>
-      <div className="grid grid-cols-2 gap-1">
-        <label className="hud-mini-button text-center cursor-pointer">
-          CARGAR AUDIO
-          <input
-            type="file"
-            accept="audio/*"
-            className="sr-only"
-            onChange={(event) => {
-              onChange(event.target.files?.[0] ?? null);
-              event.target.value = "";
-            }}
-          />
-        </label>
-        <button type="button" className="hud-mini-button" onClick={() => onChange(null)} disabled={!fileName}>
-          {resetLabel}
-        </button>
-      </div>
     </div>
   );
 }

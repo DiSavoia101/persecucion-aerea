@@ -40,6 +40,15 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
 
   const currentTime = t[f];
   const currentDist = d[f];
+  const firstTime = t[0] ?? 0;
+  const lastTime = t.at(-1) ?? firstTime;
+  const timeSpan = Math.max(lastTime - firstTime, result.metadata.config.simulation.dt, 0.1);
+  const timePadding = Math.max(timeSpan * 0.08, result.metadata.config.simulation.dt * 2);
+  const maxDistance = Math.max(...d, outcome.minDistance, 1);
+  const distancePadding = Math.max(maxDistance * 0.1, result.metadata.config.simulation.hitRadius * 2);
+  const eventNearRight = outcome.minDistanceTime >= firstTime + timeSpan * 0.78;
+  const annotationXOffset = eventNearRight ? -72 : 72;
+  const annotationAlign: "left" | "right" = eventNearRight ? "right" : "left";
 
   const traces: Plotly.Data[] = [
     // Curva completa de distancia
@@ -63,14 +72,15 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
         color: colors.currentPoint,
         size: 10,
         symbol: "circle",
-        line: { color: colors.distance, width: 2 },
+        line: { color: colors.text, width: 2 },
       },
+      cliponaxis: false,
       hovertemplate: `<b>Frame actual</b><br>t = ${currentTime.toFixed(2)} s<br>R = ${currentDist.toFixed(1)} m<extra></extra>`,
     },
     // Marcador de distancia mínima
     {
       type: "scatter",
-      mode: "text+markers",
+      mode: "markers",
       name: `d_min = ${outcome.minDistance.toFixed(1)} m`,
       x: [outcome.minDistanceTime],
       y: [outcome.minDistance],
@@ -78,11 +88,9 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
         color: colors.minDist,
         size: 12,
         symbol: "star",
-        line: { color: "#fff", width: 1.5 },
+        line: { color: colors.text, width: 1.5 },
       },
-      text: [`  d_min = ${outcome.minDistance.toFixed(1)} m`],
-      textposition: "middle right",
-      textfont: { color: colors.minDist, size: 11 },
+      cliponaxis: false,
       hovertemplate: `<b>Distancia mínima</b><br>t = ${outcome.minDistanceTime.toFixed(2)} s<br>R = ${outcome.minDistance.toFixed(1)} m<extra></extra>`,
     },
     // Marcador de intercepción (solo si hubo impacto)
@@ -90,7 +98,7 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
       ? ([
           {
             type: "scatter",
-            mode: "text+markers",
+            mode: "markers",
             name: `Intercepción (t = ${outcome.interceptTime.toFixed(2)} s)`,
             x: [outcome.interceptTime],
             y: [0],
@@ -98,11 +106,9 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
               color: colors.intercept,
               size: 14,
               symbol: "x",
-              line: { color: "#fff", width: 2 },
+              line: { color: colors.text, width: 2 },
             },
-            text: ["  Impacto"],
-            textposition: "top right",
-            textfont: { color: colors.intercept, size: 11 },
+            cliponaxis: false,
             hovertemplate: `<b>INTERCEPCIÓN</b><br>t = ${outcome.interceptTime.toFixed(2)} s<extra></extra>`,
           } as Plotly.Data,
         ])
@@ -120,15 +126,12 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
 
   const layout: Partial<Plotly.Layout> = {
     autosize: true,
-    title: {
-      text: `Distancia avión–misil vs tiempo`,
-      font: { color: colors.text, size: 15 },
-    },
     paper_bgcolor: colors.paper,
     plot_bgcolor: colors.bg,
     font: { color: colors.text, family: "monospace" },
     xaxis: {
       title: { text: "Tiempo (s)", font: { color: colors.text } },
+      range: [Math.min(0, firstTime), lastTime + timePadding],
       gridcolor: colors.axis,
       zerolinecolor: colors.axis,
       tickfont: { color: colors.text },
@@ -136,6 +139,7 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
     },
     yaxis: {
       title: { text: "Distancia (m)", font: { color: colors.text } },
+      range: [0, maxDistance + distancePadding],
       gridcolor: colors.axis,
       zerolinecolor: colors.axis,
       tickfont: { color: colors.text },
@@ -147,36 +151,67 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
       bgcolor: colors.legend,
       bordercolor: colors.axis,
       borderwidth: 1,
+      orientation: "h",
+      x: 0,
+      y: 1.02,
+      xanchor: "left",
+      yanchor: "bottom",
     },
-    margin: { t: 50, b: 60, l: 80, r: 20 },
+    margin: { t: 50, b: 72, l: 80, r: 48 },
     shapes: [cursorShape],
-    // Anotación de distancia mínima
     annotations: [
       {
         xref: "x", yref: "y",
         x: outcome.minDistanceTime,
         y: outcome.minDistance,
-        ax: 40, ay: -30,
-        bgcolor: "rgba(14,21,33,0.85)",
+        ax: annotationXOffset,
+        ay: -44,
+        align: annotationAlign,
+        bgcolor: colors.legend,
         bordercolor: colors.minDist,
         borderwidth: 1,
         font: { color: colors.minDist, size: 11 },
-        text: `d_min = ${outcome.minDistance.toFixed(1)} m<br>t = ${outcome.minDistanceTime.toFixed(2)} s`,
+        text: `d_min ${outcome.minDistance.toFixed(1)} m · ${outcome.minDistanceTime.toFixed(2)} s`,
         showarrow: true,
         arrowcolor: colors.minDist,
         arrowsize: 1,
         arrowwidth: 1.5,
       },
+      ...(outcome.intercepted && outcome.interceptTime != null
+        ? [{
+            xref: "x" as const,
+            yref: "y" as const,
+            x: outcome.interceptTime,
+            y: 0,
+            ax: annotationXOffset,
+            ay: -94,
+            align: annotationAlign,
+            bgcolor: colors.legend,
+            bordercolor: colors.intercept,
+            borderwidth: 1,
+            font: { color: colors.intercept, size: 11 },
+            text: `Intercepción · ${outcome.interceptTime.toFixed(2)} s`,
+            showarrow: true,
+            arrowcolor: colors.intercept,
+            arrowsize: 1,
+            arrowwidth: 1.5,
+          }]
+        : []),
     ],
   };
 
   return (
-    <Plot
-      data={traces}
-      layout={layout}
-      useResizeHandler
-      style={{ width: "100%", height: "100%" }}
-      config={{ displayModeBar: false, responsive: true }}
-    />
+    <div className="plotly-graph-shell">
+      <div className="plotly-graph-caption">Distancia avión–misil vs tiempo</div>
+      <div className="plotly-graph-body">
+        <Plot
+          data={traces}
+          layout={layout}
+          useResizeHandler
+          style={{ width: "100%", height: "100%" }}
+          config={{ displayModeBar: false, responsive: true }}
+        />
+      </div>
+    </div>
   );
 }

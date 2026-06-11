@@ -324,7 +324,10 @@ export default function Controls({ config, onConfigChange, onSimulate, configSta
   const applyPreset = useCallback((preset: PresetId) => {
     const next = cloneConfig(mockConfig);
 
-    if (preset === "pursuit") {
+    if (preset === "pn") {
+      next.missile.guidanceLaw = "proportional_nav";
+      next.missile.navConstant = 4;
+    } else if (preset === "pursuit") {
       next.aircraft.maneuver = "straight";
       next.missile.guidanceLaw = "pure_pursuit";
     } else if (preset === "weave") {
@@ -370,6 +373,11 @@ export default function Controls({ config, onConfigChange, onSimulate, configSta
       next.simulation.maxTime = 14;
     }
 
+    const errors = validateConfig(next);
+    if (errors.length > 0) {
+      onEvent?.(`Preajuste inválido: ${errors[0]}`);
+      return;
+    }
     onConfigChange(next);
     onEvent?.(`Preajuste cargado: ${PRESETS.find((item) => item.id === preset)?.label ?? preset}`);
   }, [onConfigChange, onEvent]);

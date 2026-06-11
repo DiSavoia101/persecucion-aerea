@@ -126,8 +126,9 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
         color: colors.aircraft,
         size: 14,
         symbol: "triangle-right",
-        line: { color: "#fff", width: 1.5 },
+        line: { color: colors.text, width: 1.5 },
       },
+      cliponaxis: false,
       hovertemplate: `<b>Avión</b><br>t = ${result.time[f].toFixed(2)} s<br>x = %{x:.0f} m<br>y = %{y:.0f} m<extra></extra>`,
     },
     // Marcador actual del misil
@@ -141,18 +142,15 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
         color: colors.missile,
         size: 13,
         symbol: "diamond",
-        line: { color: "#fff", width: 1.5 },
+        line: { color: colors.text, width: 1.5 },
       },
+      cliponaxis: false,
       hovertemplate: `<b>Misil</b><br>t = ${result.time[f].toFixed(2)} s<br>x = %{x:.0f} m<br>y = %{y:.0f} m<extra></extra>`,
     },
   ];
 
   const layout: Partial<Plotly.Layout> = {
     autosize: true,
-    title: {
-      text: `Vista cenital — t = ${result.time[f].toFixed(2)} s`,
-      font: { color: colors.text, size: 15 },
-    },
     paper_bgcolor: colors.paper,
     plot_bgcolor: colors.bg,
     font: { color: colors.text, family: "monospace" },
@@ -179,18 +177,28 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
       bgcolor: colors.legend,
       bordercolor: colors.axis,
       borderwidth: 1,
+      orientation: "h",
+      x: 0,
+      y: 1.02,
+      xanchor: "left",
+      yanchor: "bottom",
     },
-    margin: { t: 50, b: 60, l: 70, r: 20 },
+    margin: { t: 50, b: 64, l: 70, r: 28 },
     shapes: buildChessShapes(xMin, xMax, yMin, yMax, colors),
   };
 
   return (
-    <Plot
-      data={traces}
-      layout={layout}
-      useResizeHandler
-      style={{ width: "100%", height: "100%" }}
-      config={{ displayModeBar: false, responsive: true }}
-    />
+    <div className="plotly-graph-shell">
+      <div className="plotly-graph-caption">Vista cenital · t = {result.time[f].toFixed(2)} s</div>
+      <div className="plotly-graph-body">
+        <Plot
+          data={traces}
+          layout={layout}
+          useResizeHandler
+          style={{ width: "100%", height: "100%" }}
+          config={{ displayModeBar: false, responsive: true }}
+        />
+      </div>
+    </div>
   );
 }
