@@ -207,7 +207,7 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
 
   const copySummary = async () => {
     const summary = [
-      `Fuente: mock`,
+      `Fuente: simulador`,
       `Frames: ${result.time.length}`,
       `Frame actual: ${currentFrame}`,
       `Tiempo: ${(result.time[currentFrame] ?? 0).toFixed(2)} / ${(result.time.at(-1) ?? 0).toFixed(2)} s`,
@@ -269,7 +269,7 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
 
       {showInspector && (
         <div className="result-inspector">
-          <InspectorCell label="FUENTE" value="MOCK" />
+          <InspectorCell label="FUENTE" value="SIMULADOR" />
           <InspectorCell label="FRAMES" value={String(result.time.length)} />
           <InspectorCell label="FRAME ACTUAL" value={String(currentFrame)} />
           <InspectorCell label="TIEMPO ACTUAL" value={`${(result.time[currentFrame] ?? 0).toFixed(2)}s`} />

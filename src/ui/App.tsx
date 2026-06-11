@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import type { SimulationConfig, SimulationResult } from "../shared/types";
-import { mockResult, mockConfig } from "../shared/mockResult";
+import { mockConfig } from "../shared/mockResult";
+import { simulate } from "../simulation";
 import Controls, { validateConfig } from "./Controls";
 import PlaybackBar from "./PlaybackBar";
 import StatusPanel from "./StatusPanel";
@@ -67,17 +68,7 @@ function clampFrame(frame: number, lastFrame: number) {
 }
 
 function runSimulation(config: SimulationConfig): SimulationResult {
-  // Reemplazar este fallback con simulate(config) cuando el Grupo 2 lo exporte.
-  const fallbackResult = structuredClone(mockResult);
-  return {
-    ...fallbackResult,
-    metadata: {
-      ...fallbackResult.metadata,
-      config: structuredClone(config),
-      integrator: config.simulation.integrator,
-      steps: fallbackResult.time.length,
-    },
-  };
+  return simulate(config);
 }
 
 function configsMatch(left: SimulationConfig, right: SimulationConfig) {
@@ -87,14 +78,14 @@ function configsMatch(left: SimulationConfig, right: SimulationConfig) {
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("simulation");
   const [config, setConfig] = useState<SimulationConfig>(() => structuredClone(mockConfig));
-  const [result, setResult] = useState<SimulationResult>(() => structuredClone(mockResult));
+  const [result, setResult] = useState<SimulationResult>(() => runSimulation(structuredClone(mockConfig)));
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [presentationMode, setPresentationMode] = useState(false);
   const [uiSettings, setUiSettings] = useState<UiSettings>(loadUiSettings);
-  const [uiMessage, setUiMessage] = useState("Simulación cargada con datos mock · lista para reproducir");
+  const [uiMessage, setUiMessage] = useState("Simulación inicial cargada · lista para reproducir");
   const [runCount, setRunCount] = useState(1);
   const [lastRunTime, setLastRunTime] = useState(() => new Date());
   const [runNotice, setRunNotice] = useState<string | null>(null);
@@ -259,9 +250,9 @@ export default function App() {
     lastLoggedSeekRef.current = -999;
     setRunCount((count) => count + 1);
     setLastRunTime(new Date());
-    setRunNotice("Simulación cargada con mock · frame reiniciado · listo para reproducir");
-    setUiMessage("Resultado mock aplicado y listo para reproducir");
-    addEvent(`CORRIDA #${runCount + 1} cargada · fuente mock · frame 0`, "success");
+    setRunNotice("Simulación ejecutada · frame reiniciado · listo para reproducir");
+    setUiMessage("Resultado aplicado y listo para reproducir");
+    addEvent(`CORRIDA #${runCount + 1} ejecutada · ${nextConfig.simulation.integrator.toUpperCase()} · frame 0`, "success");
     playTone(720);
   }, [addEvent, playTone, runCount]);
 
@@ -633,7 +624,7 @@ export default function App() {
                 </div>
                 <div className="state-readout">
                   <span>RESULTADO ACTUAL</span>
-                  <strong className="text-cyan-glow">CORRIDA #{runCount} · MOCK · {totalFrames} FRAMES</strong>
+                  <strong className="text-cyan-glow">CORRIDA #{runCount} · {totalFrames} FRAMES</strong>
                 </div>
                 <span className={configInvalid ? "status-chip status-chip-danger" : configPending ? "status-chip status-chip-warning" : "status-chip status-chip-ready"}>
                   {configInvalid ? "CONFIG INVÁLIDA" : configPending ? "CONFIG PENDIENTE" : "SIM LISTA"}
@@ -691,7 +682,7 @@ export default function App() {
       </main>
 
       <div className="px-4 py-1 border-t border-panel-border bg-obsidian/90 flex items-center justify-between text-[8px] text-ash tracking-[0.15em]">
-        <span>FUENTE: MOCK | INTEGRADOR: {result.metadata.integrator.toUpperCase()} | dt ACTIVO={result.metadata.config.simulation.dt}s</span>
+        <span>FUENTE: SIMULADOR | INTEGRADOR: {result.metadata.integrator.toUpperCase()} | dt ACTIVO={result.metadata.config.simulation.dt}s</span>
         <span className="flex items-center gap-2">
           <span className="w-1 h-1 bg-hud pulse-dot inline-block" />
           CONFIG {configStatus}
