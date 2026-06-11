@@ -12,6 +12,7 @@ import GraphWorkspace from "./GraphWorkspace";
 import UiSettingsPanel, { type UiSettings } from "./UiSettingsPanel";
 import MissionLog, { type MissionEvent } from "./MissionLog";
 import EventNavigator from "./EventNavigator";
+import TheoryTab from "../theory/TheoryTab";
 
 type TabId = "simulation" | "theory";
 type EventTone = NonNullable<MissionEvent["tone"]>;
@@ -682,26 +683,7 @@ export default function App() {
               className="flex-1 overflow-y-auto p-6 tactical-grid"
             >
               <div className="max-w-4xl mx-auto">
-                <div className="mil-panel p-6">
-                  <div className="mil-corners">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-1.5 h-1.5 bg-hud" />
-                      <span className="tac-label tac-label-hud">ANÁLISIS TEÓRICO</span>
-                      <span className="text-[8px] text-mist ml-2">[THR-02]</span>
-                    </div>
-                    <div className="mil-divider mb-4" />
-                    <p className="text-mist text-[11px] leading-relaxed tracking-wide">
-                      MÓDULO RESERVADO PARA EL GRUPO 6.
-                      CONTENIDO: ECUACIONES DE MOVIMIENTO, LEYES DE GUIADO,
-                      CLASIFICACIÓN DEL SISTEMA (LINEAL / NO LINEAL / HOMOGÉNEO),
-                      ANÁLISIS DE ESTABILIDAD VÍA AUTOVALORES.
-                    </p>
-                    <div className="mt-6 p-4 border border-dashed border-slate-steel text-center">
-                      <code className="text-hud/50 text-[11px]">{"<TheoryTab />"}</code>
-                      <span className="text-ash text-[10px] ml-2">PENDIENTE IMPLEMENTACIÓN</span>
-                    </div>
-                  </div>
-                </div>
+                <TheoryTab />
               </div>
             </motion.div>
           )}
