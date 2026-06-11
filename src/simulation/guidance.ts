@@ -31,8 +31,9 @@ const perpComponent = (v: Vec3, u: Vec3): Vec3 => {
 };
 
 /**
- * Velocidad de rotación de la línea de visión: ω_LOS = (v_rel - (v_rel·r̂) r̂) / R
- * Donde r̂ es el versor de la línea de visión.
+ * Velocidad de rotación de la línea de visión: ω_LOS = (r × v_rel) / R²
+ * Donde r es el vector relativo y v_rel es la velocidad relativa.
+ * Fórmula de la especificación (sección 3.2 y 3.5).
  */
 function computeLOSRateVector(
   rA: Vec3, // posición del avión
@@ -41,20 +42,18 @@ function computeLOSRateVector(
   vM: Vec3  // velocidad del misil
 ): Vec3 {
   const r = sub(rA, rM); // vector relativo (del misil hacia el avión)
-  const R = norm(r);
+  const R2 = dot(r, r); // R² = r·r
 
-  if (R < 1e-6) {
+  if (R2 < 1e-12) {
     return [0, 0, 0];
   }
 
-  const r_hat = scale(r, 1 / R); // versor de la línea de visión
   const v_rel = sub(vA, vM); // velocidad relativa
 
-  // Componente perpendicular de v_rel respecto a r
-  const v_rel_perp = perpComponent(v_rel, r);
-
-  // ω_LOS = v_rel_perp / R
-  return scale(v_rel_perp, 1 / R);
+  // ω_LOS = (r × v_rel) / R²
+  // Según especificación sección 3.2 y 3.5
+  const cross_r_vrel = cross(r, v_rel);
+  return scale(cross_r_vrel, 1 / R2);
 }
 
 // ───────────────────────────────────────────────────────────────────────────

@@ -158,6 +158,30 @@ describe("Leyes de Guiado del Misil", () => {
       expect(magnitude).toBeGreaterThan(0);
       expect(magnitude).toBeLessThanOrEqual(300 + 1e-6);
     });
+
+    it("🔥 CRÍTICO: PN NO esquiva cuando está cerca de impactar", () => {
+      // Este es el test que valida que el bug está arreglado
+      // El misil debe acelerar HACIA el avión, no LEJOS de él
+      const rA = [20, 10, 0] as Vec3;       // Avión MUY CERCA
+      const vA = [-50, 0, 0] as Vec3;       // Evasionando
+      const rM = [0, 0, 0] as Vec3;         // Misil
+      const vM = [100, 5, 0] as Vec3;       // Persiguiendo
+
+      const accel = missileAccelProportionalNav(rA, vA, rM, vM, 4, 300);
+
+      // Vector relativo: del misil al avión
+      const rel = [rA[0] - rM[0], rA[1] - rM[1], rA[2] - rM[2]];
+      
+      // Producto escalar: accel · rel
+      // Si es positivo → aceleración apunta hacia el avión ✅
+      // Si es negativo → aceleración apunta lejos (esquiva) ❌
+      const dot_product = accel[0] * rel[0] + accel[1] * rel[1] + accel[2] * rel[2];
+
+      expect(dot_product).toBeGreaterThan(0);
+      // Margin: debe tener una componente significativa hacia el objetivo
+      expect(Math.abs(dot_product)).toBeGreaterThan(10);
+    });
+
   });
 
   /**
