@@ -38,11 +38,14 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
     );
   }
 
-  const n = result.time.length;
+  const n = Math.min(result.time.length, result.distance.length);
+  if (n === 0) {
+    return <div className="graph-fallback">Sin datos alineados para el gráfico de distancia.</div>;
+  }
   const f = clamp(Math.round(currentFrame), 0, n - 1);
 
-  const t = result.time;
-  const d = result.distance;
+  const t = result.time.slice(0, n);
+  const d = result.distance.slice(0, n);
   const { outcome } = result;
 
   const currentTime = t[f];
@@ -126,6 +129,7 @@ export default function DistancePlot({ result, currentFrame }: GraphProps) {
   };
 
   const layout: Partial<Plotly.Layout> = {
+    autosize: true,
     title: {
       text: `Distancia avión–misil vs tiempo`,
       font: { color: COLORS.text, size: 15 },

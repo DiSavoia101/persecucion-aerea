@@ -66,7 +66,10 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
     );
   }
 
-  const n = result.time.length;
+  const n = Math.min(result.time.length, result.aircraft.position.length, result.missile.position.length);
+  if (n === 0) {
+    return <div className="graph-fallback">Sin datos alineados para la vista cenital.</div>;
+  }
   const f = clamp(Math.round(currentFrame), 0, n - 1);
 
   // Extraer X e Y de todos los frames hasta currentFrame
@@ -154,6 +157,7 @@ export default function GridView2D({ result, currentFrame }: GraphProps) {
   ];
 
   const layout: Partial<Plotly.Layout> = {
+    autosize: true,
     title: {
       text: `Vista cenital — t = ${result.time[f].toFixed(2)} s`,
       font: { color: COLORS.text, size: 15 },

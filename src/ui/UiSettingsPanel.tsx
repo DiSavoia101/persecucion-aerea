@@ -4,6 +4,7 @@ export type UiTheme = "green" | "cyan" | "amber" | "threat" | "blueprint" | "ter
 export type UiDensity = "compact" | "normal" | "presentation";
 export type PanelStyle = "tactical" | "glass" | "blueprint" | "crt" | "minimal" | "alert";
 export type GridIntensity = "low" | "medium" | "high";
+export type SimulationVolume = "low" | "medium" | "high";
 
 export interface UiSettings {
   theme: UiTheme;
@@ -12,6 +13,11 @@ export interface UiSettings {
   reducedMotion: boolean;
   density: UiDensity;
   sound: boolean;
+  simulationSound: boolean;
+  simulationMotor: boolean;
+  impactSound: boolean;
+  simulationVolume: SimulationVolume;
+  showMissionMilestones: boolean;
   panelStyle: PanelStyle;
   gridIntensity: GridIntensity;
 }
@@ -116,6 +122,22 @@ export default function UiSettingsPanel({
             <Toggle label="EFECTOS / RESPLANDOR" enabled={settings.glow} onChange={(glow) => patch({ glow })} />
             <Toggle label="ANIMACIÓN REDUCIDA" enabled={settings.reducedMotion} onChange={(reducedMotion) => patch({ reducedMotion })} />
             <Toggle label="SONIDO UI" enabled={settings.sound} onChange={(sound) => patch({ sound })} />
+            <Toggle label="SONIDO SIMULACIÓN" enabled={settings.simulationSound} onChange={(simulationSound) => patch({ simulationSound })} />
+            <Toggle label="MOTOR" enabled={settings.simulationMotor} onChange={(simulationMotor) => patch({ simulationMotor })} />
+            <Toggle label="EVENTOS DE IMPACTO" enabled={settings.impactSound} onChange={(impactSound) => patch({ impactSound })} />
+            <label className="mt-2">VOLUMEN SIMULACIÓN</label>
+            <div className="grid grid-cols-3 gap-1">
+              {(["low", "medium", "high"] as SimulationVolume[]).map((volume) => (
+                <button
+                  key={volume}
+                  onClick={() => patch({ simulationVolume: volume })}
+                  className={`hud-mini-button ${settings.simulationVolume === volume ? "hud-mini-button-active" : ""}`}
+                >
+                  {volume === "low" ? "BAJO" : volume === "medium" ? "MEDIO" : "ALTO"}
+                </button>
+              ))}
+            </div>
+            <Toggle label="HITOS DE MISIÓN" enabled={settings.showMissionMilestones} onChange={(showMissionMilestones) => patch({ showMissionMilestones })} />
             <Toggle label="MODO PRESENTACIÓN" enabled={presentationMode} onChange={onPresentationModeChange} />
           </div>
           <button onClick={onReset} className="hud-mini-button w-full mt-3">RESTABLECER UI</button>

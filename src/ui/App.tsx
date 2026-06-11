@@ -1,7 +1,7 @@
 /**
  * Grupo 3 — UI / orquestador.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import type { SimulationConfig, SimulationResult } from "../shared/types";
 import { mockConfig } from "../shared/mockResult";
@@ -17,6 +17,16 @@ import TheoryTab from "../theory/TheoryTab";
 
 type TabId = "simulation" | "theory";
 type EventTone = NonNullable<MissionEvent["tone"]>;
+type EngineAudioNodes = {
+  oscillators: OscillatorNode[];
+  gain: GainNode;
+};
+
+const SIMULATION_VOLUME = {
+  low: 0.55,
+  medium: 1,
+  high: 1.45,
+} as const;
 
 const DEFAULT_UI_SETTINGS: UiSettings = {
   theme: "green",
@@ -25,6 +35,11 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   reducedMotion: false,
   density: "normal",
   sound: false,
+  simulationSound: false,
+  simulationMotor: true,
+  impactSound: true,
+  simulationVolume: "medium",
+  showMissionMilestones: true,
   panelStyle: "tactical",
   gridIntensity: "medium",
 };
@@ -49,6 +64,11 @@ function loadUiSettings(): UiSettings {
       glow: typeof saved.glow === "boolean" ? saved.glow : DEFAULT_UI_SETTINGS.glow,
       reducedMotion: typeof saved.reducedMotion === "boolean" ? saved.reducedMotion : DEFAULT_UI_SETTINGS.reducedMotion,
       sound: typeof saved.sound === "boolean" ? saved.sound : DEFAULT_UI_SETTINGS.sound,
+      simulationSound: typeof saved.simulationSound === "boolean" ? saved.simulationSound : DEFAULT_UI_SETTINGS.simulationSound,
+      simulationMotor: typeof saved.simulationMotor === "boolean" ? saved.simulationMotor : DEFAULT_UI_SETTINGS.simulationMotor,
+      impactSound: typeof saved.impactSound === "boolean" ? saved.impactSound : DEFAULT_UI_SETTINGS.impactSound,
+      simulationVolume: ["low", "medium", "high"].includes(saved.simulationVolume ?? "") ? saved.simulationVolume! : DEFAULT_UI_SETTINGS.simulationVolume,
+      showMissionMilestones: typeof saved.showMissionMilestones === "boolean" ? saved.showMissionMilestones : DEFAULT_UI_SETTINGS.showMissionMilestones,
     };
   } catch {
     return DEFAULT_UI_SETTINGS;
@@ -108,7 +128,9 @@ export default function App() {
   const elapsedRef = useRef(0);
   const eventIdRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const engineAudioRef = useRef<EngineAudioNodes | null>(null);
   const endNotifiedRef = useRef(false);
+  const interceptSoundPlayedRef = useRef(false);
   const lastConfigLogRef = useRef("");
   const lastLoggedSeekRef = useRef(-999);
 
@@ -119,6 +141,10 @@ export default function App() {
   const currentTime = result.time[safeFrame] ?? 0;
   const currentDistance = result.distance[safeFrame] ?? 0;
   const closingVel = result.closingVelocity[safeFrame] ?? 0;
+  const interceptFrame = useMemo(() => {
+    if (!result.outcome.intercepted || result.outcome.interceptTime == null) return -1;
+    return result.time.findIndex((time) => time >= result.outcome.interceptTime!);
+  }, [result]);
   const configErrors = validateConfig(config);
   const configInvalid = configErrors.length > 0;
   const configPending = !configsMatch(config, result.metadata.config);
@@ -148,6 +174,80 @@ export default function App() {
     }
   }, [uiSettings.sound]);
 
+  const playSimulationSound = useCallback((kind: "start" | "intercept" | "end") => {
+    if (!uiSettings.simulationSound) return;
+    if (kind === "intercept" && !uiSettings.impactSound) return;
+    try {
+      const AudioContextConstructor = window.AudioContext;
+      const context = audioContextRef.current ?? new AudioContextConstructor();
+      audioContextRef.current = context;
+      if (context.state === "suspended") void context.resume();
+      const volume = SIMULATION_VOLUME[uiSettings.simulationVolume];
+
+      if (kind === "intercept") {
+        const duration = 0.5;
+        const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let index = 0; index < data.length; index += 1) {
+          data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / data.length, 1.8);
+        }
+        const source = context.createBufferSource();
+        const filter = context.createBiquadFilter();
+        const gain = context.createGain();
+        source.buffer = buffer;
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(1100, context.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(180, context.currentTime + duration);
+        gain.gain.setValueAtTime(0.28 * volume, context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration);
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(context.destination);
+        source.start();
+
+        const impact = context.createOscillator();
+        const impactGain = context.createGain();
+        impact.type = "sine";
+        impact.frequency.setValueAtTime(105, context.currentTime);
+        impact.frequency.exponentialRampToValueAtTime(38, context.currentTime + 0.24);
+        impactGain.gain.setValueAtTime(0.2 * volume, context.currentTime);
+        impactGain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
+        impact.connect(impactGain);
+        impactGain.connect(context.destination);
+        impact.start();
+        impact.stop(context.currentTime + 0.3);
+        return;
+      }
+
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const duration = kind === "start" ? 0.32 : 0.22;
+      oscillator.type = kind === "start" ? "sawtooth" : "sine";
+      oscillator.frequency.setValueAtTime(kind === "start" ? 95 : 360, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(kind === "start" ? 180 : 180, context.currentTime + duration);
+      gain.gain.setValueAtTime(0.035 * volume, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + duration);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + duration);
+    } catch {
+      setActionToast("Audio de simulación no disponible");
+    }
+  }, [uiSettings.impactSound, uiSettings.simulationSound, uiSettings.simulationVolume]);
+
+  const stopEngineSound = useCallback(() => {
+    const engine = engineAudioRef.current;
+    const context = audioContextRef.current;
+    if (!engine || !context) return;
+    engineAudioRef.current = null;
+    const stopAt = context.currentTime + 0.1;
+    engine.gain.gain.cancelScheduledValues(context.currentTime);
+    engine.gain.gain.setValueAtTime(Math.max(engine.gain.gain.value, 0.0001), context.currentTime);
+    engine.gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+    engine.oscillators.forEach((oscillator) => oscillator.stop(stopAt));
+  }, []);
+
   const addEvent = useCallback((message: string, tone: EventTone = "info", toast = true) => {
     const event: MissionEvent = {
       id: ++eventIdRef.current,
@@ -176,9 +276,8 @@ export default function App() {
     if (totalFrames > 1 && !endNotifiedRef.current) {
       endNotifiedRef.current = true;
       addEvent("Fin de corrida alcanzado", "success");
-      playTone(320, 0.1);
     }
-  }, [addEvent, lastFrame, playTone, safeFrame, totalFrames]);
+  }, [addEvent, lastFrame, safeFrame, totalFrames]);
 
   useEffect(() => {
     if (!runNotice) return;
@@ -200,8 +299,72 @@ export default function App() {
   }, [uiSettings]);
 
   useEffect(() => () => {
+    stopEngineSound();
     void audioContextRef.current?.close();
-  }, []);
+  }, [stopEngineSound]);
+
+  useEffect(() => {
+    const shouldPlayEngine =
+      playing &&
+      totalFrames > 1 &&
+      uiSettings.simulationSound &&
+      uiSettings.simulationMotor;
+    if (!shouldPlayEngine) {
+      stopEngineSound();
+      return;
+    }
+    if (engineAudioRef.current) return;
+
+    try {
+      const AudioContextConstructor = window.AudioContext;
+      const context = audioContextRef.current ?? new AudioContextConstructor();
+      audioContextRef.current = context;
+      if (context.state === "suspended") void context.resume();
+
+      const filter = context.createBiquadFilter();
+      const gain = context.createGain();
+      const volume = SIMULATION_VOLUME[uiSettings.simulationVolume];
+      filter.type = "lowpass";
+      filter.frequency.value = 260;
+      filter.Q.value = 0.7;
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.022 * volume, context.currentTime + 0.18);
+      filter.connect(gain);
+      gain.connect(context.destination);
+
+      const oscillators = [72, 108].map((frequency, index) => {
+        const oscillator = context.createOscillator();
+        oscillator.type = index === 0 ? "sawtooth" : "triangle";
+        oscillator.frequency.value = frequency * Math.max(0.8, Math.min(speed, 2));
+        oscillator.detune.value = index === 0 ? -5 : 7;
+        oscillator.connect(filter);
+        oscillator.start();
+        return oscillator;
+      });
+      engineAudioRef.current = { oscillators, gain };
+    } catch {
+      setActionToast("Audio de motor no disponible");
+    }
+
+    return stopEngineSound;
+  }, [
+    playing,
+    stopEngineSound,
+    totalFrames,
+    uiSettings.simulationMotor,
+    uiSettings.simulationSound,
+    uiSettings.simulationVolume,
+  ]);
+
+  useEffect(() => {
+    const engine = engineAudioRef.current;
+    const context = audioContextRef.current;
+    if (!engine || !context) return;
+    const multiplier = Math.max(0.8, Math.min(speed, 2));
+    engine.oscillators.forEach((oscillator, index) => {
+      oscillator.frequency.setTargetAtTime((index === 0 ? 72 : 108) * multiplier, context.currentTime, 0.08);
+    });
+  }, [speed]);
 
   useEffect(() => {
     if (!playing || totalFrames <= 1) {
@@ -227,7 +390,17 @@ export default function App() {
         elapsedRef.current -= framesToAdvance * frameDuration;
         setCurrentFrame((frame) => {
           const nextFrame = Math.min(frame + framesToAdvance, lastFrame);
+          const crossedIntercept =
+            interceptFrame >= 0 &&
+            frame < interceptFrame &&
+            nextFrame >= interceptFrame &&
+            !interceptSoundPlayedRef.current;
+          if (crossedIntercept) {
+            interceptSoundPlayedRef.current = true;
+            playSimulationSound("intercept");
+          }
           if (nextFrame >= lastFrame) {
+            if (frame < lastFrame && !crossedIntercept) playSimulationSound("end");
             setPlaying(false);
           }
           return nextFrame;
@@ -239,7 +412,7 @@ export default function App() {
 
     animationFrameId = requestAnimationFrame(advance);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [lastFrame, playing, result.metadata.config.simulation.dt, speed, totalFrames]);
+  }, [interceptFrame, lastFrame, playSimulationSound, playing, result.metadata.config.simulation.dt, speed, totalFrames]);
 
   const handleSimulate = useCallback((nextConfig: SimulationConfig) => {
     setConfig(structuredClone(nextConfig));
@@ -248,6 +421,7 @@ export default function App() {
     setPlaying(false);
     lastConfigLogRef.current = "";
     lastLoggedSeekRef.current = -999;
+    interceptSoundPlayedRef.current = false;
     setRunCount((count) => count + 1);
     setLastRunTime(new Date());
     setRunNotice("Simulación ejecutada · frame reiniciado · listo para reproducir");
@@ -281,12 +455,19 @@ export default function App() {
       playTone(180, 0.09);
       return;
     }
-    setCurrentFrame((frame) => frame >= lastFrame ? 0 : frame);
+    setCurrentFrame((frame) => {
+      if (frame >= lastFrame) {
+        interceptSoundPlayedRef.current = false;
+        return 0;
+      }
+      return frame;
+    });
     setPlaying(totalFrames > 1);
     setUiMessage("Reproduciendo última simulación aplicada");
     addEvent("Reproducción iniciada", "success");
     playTone(620);
-  }, [addEvent, lastFrame, playTone, playbackDisabled, playbackDisabledReason, totalFrames]);
+    if (totalFrames > 1) playSimulationSound("start");
+  }, [addEvent, lastFrame, playSimulationSound, playTone, playbackDisabled, playbackDisabledReason, totalFrames]);
 
   const handlePause = useCallback(() => {
     setPlaying(false);
@@ -297,6 +478,7 @@ export default function App() {
   const handleRestart = useCallback(() => {
     setCurrentFrame(0);
     setPlaying(false);
+    interceptSoundPlayedRef.current = false;
     addEvent("Línea de tiempo reiniciada · frame 0");
     playTone(420);
   }, [addEvent, playTone]);
@@ -325,6 +507,9 @@ export default function App() {
   const handleUiSettingsChange = useCallback((next: UiSettings) => {
     if (next.theme !== uiSettings.theme) setActionToast("Tema visual actualizado");
     if (next.sound !== uiSettings.sound) setActionToast(`Sonido UI ${next.sound ? "activado" : "silenciado"}`);
+    if (next.simulationSound !== uiSettings.simulationSound) {
+      setActionToast(`Sonido de simulación ${next.simulationSound ? "activado" : "silenciado"}`);
+    }
     setUiSettings(next);
   }, [uiSettings]);
 
@@ -333,6 +518,7 @@ export default function App() {
     setCurrentFrame(0);
     setPlaying(false);
     setDemoSignal((signal) => signal + 1);
+    setUiSettings((settings) => ({ ...settings, showMissionMilestones: true }));
     setUiMessage("Demo lista · presioná Reproducir para iniciar");
     addEvent("Modo demo listo · todos los visores · frame 0", "success");
   }, [addEvent]);
@@ -341,6 +527,7 @@ export default function App() {
     setPresentationMode(true);
     setShowStatusPanel(true);
     setShowTimeline(true);
+    setUiSettings((settings) => ({ ...settings, showMissionMilestones: true }));
     setShowStateStrip(false);
     setClosePanelsSignal((signal) => signal + 1);
     setCleanSignal((signal) => signal + 1);
@@ -651,7 +838,7 @@ export default function App() {
                 eventTime={result.outcome.interceptTime ?? result.outcome.minDistanceTime}
                 eventLabel={result.outcome.intercepted ? "EVENTO DE INTERCEPCIÓN" : "DISTANCIA MÍNIMA"}
               />}
-              {showTimeline && <EventNavigator
+              {uiSettings.showMissionMilestones && <EventNavigator
                 result={result}
                 currentFrame={safeFrame}
                 onSeek={handleSeek}
@@ -661,6 +848,12 @@ export default function App() {
               <div className="secondary-controls">
                 <button onClick={() => setShowStateStrip((value) => !value)} className="hud-mini-button">RESUMEN</button>
                 <button onClick={() => setShowTimeline((value) => !value)} className="hud-mini-button">LÍNEA DE TIEMPO</button>
+                <button
+                  onClick={() => handleUiSettingsChange({ ...uiSettings, showMissionMilestones: !uiSettings.showMissionMilestones })}
+                  className={`hud-mini-button ${uiSettings.showMissionMilestones ? "hud-mini-button-active" : ""}`}
+                >
+                  {uiSettings.showMissionMilestones ? "OCULTAR HITOS" : "HITOS"}
+                </button>
               </div>
             </motion.div>
           ) : (

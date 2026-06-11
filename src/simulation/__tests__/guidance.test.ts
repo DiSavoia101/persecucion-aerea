@@ -25,14 +25,14 @@ describe("Leyes de Guiado del Misil", () => {
       expect(Math.abs(accel[2])).toBeLessThan(1e-5);
     });
 
-    it("Acelera hacia el avión cuando está en línea recta", () => {
-      const rA = [100, 0, 0] as Vec3; // Avión adelante en eje x
+    it("Acelera hacia el avión cuando no está alineado con el misil", () => {
+      const rA = [100, 50, 0] as Vec3; // Avión adelante y desplazado lateralmente
       const vA = [0, 0, 0] as Vec3;
       const rM = [0, 0, 0] as Vec3; // Misil en origen
       const vM = [10, 0, 0] as Vec3; // Yendo en eje x
 
       const accel = missileAccelPurePursuit(rA, vA, rM, vM, 1.0);
-      // Debe haber aceleración (no es colineal con vM)
+      // La aceleración lateral corrige la dirección hacia el objetivo.
       expect(Math.sqrt(accel[0] ** 2 + accel[1] ** 2 + accel[2] ** 2)).toBeGreaterThan(
         0
       );

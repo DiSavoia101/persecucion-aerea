@@ -403,7 +403,7 @@ body {
 }
 
 .ui-root[data-density="compact"] .graph-container {
-  min-height: 180px;
+  min-height: 0;
 }
 
 .ui-root[data-density="compact"] .result-inspector {
@@ -436,7 +436,7 @@ body {
 }
 
 .ui-root[data-density="presentation"] .graph-container {
-  min-height: 340px;
+  min-height: 0;
 }
 
 .ui-root[data-presentation="on"] .workspace-toolbar {
@@ -678,6 +678,24 @@ body {
 
 .display-toolbar {
   padding: 5px 10px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  overflow: hidden;
+}
+
+.display-drag-handle {
+  cursor: grab;
+}
+
+.display-drag-handle:active {
+  cursor: grabbing;
+}
+
+.display-move-hint {
+  color: var(--color-ash);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
 }
 
 .result-inspector {
@@ -1071,6 +1089,25 @@ input:focus-visible,
   opacity: 0.55;
   border-color: var(--color-hud) !important;
   box-shadow: 0 0 20px color-mix(in srgb, var(--color-hud) 18%, transparent);
+}
+
+.workspace-display-hidden {
+  display: none !important;
+}
+
+.workspace-grid {
+  min-width: 0;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.workspace-display,
+.workspace-display > .mil-corners {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 1100px) {
@@ -1554,15 +1591,85 @@ label {
 /*  Graph Container  */
 .graph-container {
   position: relative;
+  display: block;
+  flex: 1 1 0%;
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .graph-container .js-plotly-plot,
-.graph-container .plot-container {
+.graph-container .plot-container,
+.graph-container .svg-container,
+.trajectory-canvas-shell,
+.trajectory-canvas-shell > div,
+.trajectory-canvas-shell canvas {
   width: 100% !important;
   height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}
+
+.trajectory-canvas-shell {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #0a0e16;
+  border-radius: var(--ui-radius);
+}
+
+.trajectory-status,
+.trajectory-ready,
+.trajectory-recovery {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.trajectory-status,
+.trajectory-ready {
+  top: 8px;
+  left: 8px;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-hud) 35%, transparent);
+  background: rgba(10, 14, 22, 0.72);
+  color: var(--color-hud);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+}
+
+.trajectory-ready {
+  opacity: 0.68;
+}
+
+.trajectory-recovery {
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  background: rgba(10, 14, 22, 0.92);
+  color: var(--color-light);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.graph-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  place-items: center;
+  border: 1px dashed var(--color-panel-border);
+  background: var(--color-obsidian);
+  color: var(--color-mist);
+  padding: 20px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-align: center;
 }
 
 /* Crosshair Corners for HUD panels  */
