@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SimulationResult } from "../shared/types";
-import GraphPlaceholder from "./GraphPlaceholder";
+import { GridView2D, Trajectory3D, DistancePlot } from "../graphs";
 
 type DisplayId = "grid" | "trajectory" | "distance";
 type LayoutPreset = "balanced" | "threeLarge" | "distanceLarge";
@@ -321,14 +321,9 @@ export default function GraphWorkspace({ result, currentFrame, onEvent, demoSign
                   </div>
                 </div>
                 <div className="flex-1 min-h-0 p-2 graph-container">
-                  {/* Integración con los Grupos 4/5: reemplazar por el gráfico real con result={result} y currentFrame={currentFrame}. */}
-                  <GraphPlaceholder
-                    name={info.name}
-                    description={info.description}
-                    accent={info.accent}
-                    result={result}
-                    currentFrame={currentFrame}
-                  />
+                  {id === "grid" && <GridView2D result={result} currentFrame={currentFrame} />}
+                  {id === "trajectory" && <Trajectory3D result={result} currentFrame={currentFrame} />}
+                  {id === "distance" && <DistancePlot result={result} currentFrame={currentFrame} />}
                 </div>
               </div>
             </section>
