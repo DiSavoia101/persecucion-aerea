@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Grupo 2 — Función de derivadas del sistema (f).
  *
  * El estado es un arreglo de 12 números:
@@ -69,3 +69,4 @@ export function systemDerivatives(
     aM[0], aM[1], aM[2],           // dv_M/dt = a_M
   ];
 }
+

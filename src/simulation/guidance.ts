@@ -1,7 +1,6 @@
-/**
+﻿/**
  * Grupo 2 — Leyes de guiado del misil (persecución pura, navegación proporcional).
  */
-
 export type Vec3 = [number, number, number];
 
 // ───────────────────────────────────────────────────────────────────────────
