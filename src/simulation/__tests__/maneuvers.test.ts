@@ -185,7 +185,7 @@ describe("Maniobras de Evasión del Avión", () => {
 
     it("Usa weaveAmp y weaveFreq", () => {
       const vel = [100, 0, 0] as Vec3;
-      const t = 0;
+      const t = Math.PI / 2;
 
       const accel1 = aircraftAcceleration(
         "weave",

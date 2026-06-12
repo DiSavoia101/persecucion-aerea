@@ -25,8 +25,8 @@
  *   avión = ámbar #ffb02e · misil = rojo #ff3b3b · LOS = azul #6f86b0
  */
 
-import { useMemo } from "react";
-import { Canvas, type ThreeElements } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, type ThreeElements, useThree } from "@react-three/fiber";
 import { OrbitControls, GizmoHelper, GizmoViewport, Line, Grid } from "@react-three/drei";
 import * as THREE from "three";
 import type { GraphProps, Vec3, SimulationResult } from "../shared/types";
@@ -65,9 +65,23 @@ function quatFromVelocity(v: Vec3): THREE.Quaternion {
   return new THREE.Quaternion().setFromUnitVectors(X_AXIS, dir);
 }
 
+function trajectoryDataLength(result: SimulationResult): number {
+  return Math.min(
+    result.time.length,
+    result.aircraft.position.length,
+    result.aircraft.velocity.length,
+    result.missile.position.length,
+    result.missile.velocity.length,
+  );
+}
+
 function clampFrame(result: SimulationResult, f: number): number {
-  const n = result.time.length;
+  const n = trajectoryDataLength(result);
   return Math.max(0, Math.min(Math.round(f), n - 1));
+}
+
+function hasTrajectoryData(result: SimulationResult): boolean {
+  return trajectoryDataLength(result) > 0;
 }
 
 /* ─────────────────────────── Modelos 3D ─────────────────────────── */
@@ -648,19 +662,6 @@ function SceneContent({ result, currentFrame }: GraphProps) {
       {/* Impacto: explosión animada por tiempo */}
       <Explosion at={missilePos} tau={tau} />
 
-      {/* Cámara orbitable */}
-      <OrbitControls
-        makeDefault
-        enableDamping
-        dampingFactor={0.08}
-        minDistance={12}
-        maxDistance={400}
-        target={[
-          result.aircraft.position[Math.floor(result.time.length / 2)][0] * SCALE * 0.7,
-          result.missile.position[0][1] * SCALE * 0.45,
-          0,
-        ]}
-      />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
         <GizmoViewport axisColors={["#ff6b6b", "#7ee787", "#79c0ff"]} labelColor="#0a0e16" />
       </GizmoHelper>
@@ -670,30 +671,139 @@ function SceneContent({ result, currentFrame }: GraphProps) {
 
 /* ─────────────────────────── Componente exportado ─────────────────────────── */
 
+function CameraReset({
+  position,
+  target,
+  resetSignal,
+}: {
+  position: [number, number, number];
+  target: [number, number, number];
+  resetSignal: number;
+}) {
+  const { camera, invalidate } = useThree();
+
+  useEffect(() => {
+    camera.position.set(...position);
+    camera.lookAt(...target);
+    camera.updateProjectionMatrix();
+    invalidate();
+  }, [camera, invalidate, position, resetSignal, target]);
+
+  return null;
+}
+
+function WebglLifecycle({ onStatus }: { onStatus: (status: "ready" | "lost") => void }) {
+  const { gl } = useThree();
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleLost = (event: Event) => {
+      event.preventDefault();
+      onStatus("lost");
+    };
+    const handleRestored = () => onStatus("ready");
+    canvas.addEventListener("webglcontextlost", handleLost);
+    canvas.addEventListener("webglcontextrestored", handleRestored);
+    onStatus("ready");
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleLost);
+      canvas.removeEventListener("webglcontextrestored", handleRestored);
+    };
+  }, [gl, onStatus]);
+
+  return null;
+}
+
+interface Trajectory3DProps extends GraphProps {
+  resetSignal?: number;
+}
+
 /**
  * <Trajectory3D result={...} currentFrame={...} />
  * Componente de la sección 7.2. Recibe el SimulationResult completo y el índice
  * del instante a mostrar. No mantiene estado de tiempo: ese lo provee la UI (Grupo 3).
  */
-export default function Trajectory3D({ result, currentFrame }: GraphProps) {
+export default function Trajectory3D({ result, currentFrame, resetSignal = 0 }: Trajectory3DProps) {
+  const hasData = hasTrajectoryData(result);
+  const [canvasRevision, setCanvasRevision] = useState(0);
+  const [webglStatus, setWebglStatus] = useState<"loading" | "ready" | "lost">("loading");
+  const shellRef = useRef<HTMLDivElement>(null);
   const initialCam = useMemo<[number, number, number]>(() => {
-    const cx = result.aircraft.position[Math.floor(result.time.length / 2)][0] * SCALE * 0.7;
+    if (!hasData) return [-34, 40, 78];
+    const cx = result.aircraft.position[Math.floor(trajectoryDataLength(result) / 2)][0] * SCALE * 0.7;
     const cy = result.missile.position[0][1] * SCALE * 0.45;
     return [cx - 34, cy + 40, 78];
-  }, [result]);
+  }, [hasData, result]);
+  const initialTarget = useMemo<[number, number, number]>(() => {
+    if (!hasData) return [0, 0, 0];
+    return [
+      result.aircraft.position[Math.floor(trajectoryDataLength(result) / 2)][0] * SCALE * 0.7,
+      result.missile.position[0][1] * SCALE * 0.45,
+      0,
+    ];
+  }, [hasData, result]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell || typeof ResizeObserver === "undefined") return;
+    let frameId = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    });
+    observer.observe(shell);
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, []);
+
+  if (!hasData) {
+    return <div className="graph-fallback">Sin datos alineados para la trayectoria 3D.</div>;
+  }
 
   return (
-    <div style={{ width: "100%", height: "100%", minHeight: 360, background: "#0a0e16", borderRadius: 12 }}>
+    <div ref={shellRef} className="trajectory-canvas-shell">
       <Canvas
+        key={canvasRevision}
         shadows
         dpr={[1, 2]}
         camera={{ position: initialCam, fov: 48, near: 0.1, far: 5000 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
+        fallback={<div className="graph-fallback">WebGL no está disponible en este navegador.</div>}
       >
         <color attach="background" args={["#0a1228"]} />
         <fogExp2 attach="fog" args={["#0a1228", 0.00012]} />
+        <WebglLifecycle onStatus={setWebglStatus} />
+        <CameraReset position={initialCam} target={initialTarget} resetSignal={resetSignal} />
         <SceneContent result={result} currentFrame={currentFrame} />
+        <OrbitControls
+          key={resetSignal}
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          minDistance={12}
+          maxDistance={400}
+          target={initialTarget}
+        />
       </Canvas>
+      {webglStatus === "loading" && <div className="trajectory-status">Recalculando visor 3D…</div>}
+      {webglStatus === "ready" && <div className="trajectory-ready">3D LISTO</div>}
+      {webglStatus === "lost" && (
+        <div className="trajectory-recovery">
+          <span>El contexto WebGL se perdió.</span>
+          <button
+            type="button"
+            className="hud-mini-button"
+            onClick={() => {
+              setWebglStatus("loading");
+              setCanvasRevision((revision) => revision + 1);
+            }}
+          >
+            REINICIAR VISOR 3D
+          </button>
+        </div>
+      )}
     </div>
   );
 }
