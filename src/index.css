@@ -86,6 +86,7 @@ body {
   --ui-panel-bg: rgba(10, 12, 16, 0.85);
   --ui-grid-size: 48px;
   --ui-glow-strength: 55%;
+  --workspace-target-height: 62vh;
   font-family: var(--ui-font);
   background:
     radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-hud) 4%, transparent) 0%, transparent 60%),
@@ -403,7 +404,7 @@ body {
 }
 
 .ui-root[data-density="compact"] .graph-container {
-  min-height: 180px;
+  min-height: 0;
 }
 
 .ui-root[data-density="compact"] .result-inspector {
@@ -436,7 +437,19 @@ body {
 }
 
 .ui-root[data-density="presentation"] .graph-container {
-  min-height: 340px;
+  min-height: 0;
+}
+
+.ui-root[data-workspace-size="compact"] {
+  --workspace-target-height: 46vh;
+}
+
+.ui-root[data-workspace-size="wide"] {
+  --workspace-target-height: 70vh;
+}
+
+.ui-root[data-workspace-size="maximum"] {
+  --workspace-target-height: calc(100vh - 150px);
 }
 
 .ui-root[data-presentation="on"] .workspace-toolbar {
@@ -664,6 +677,41 @@ body {
   background: color-mix(in srgb, var(--color-obsidian) 98%, transparent);
   padding: 12px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+  max-height: min(82vh, 760px);
+  overflow-y: auto;
+}
+
+.simulation-workspace-row {
+  flex: 0 1 var(--workspace-target-height);
+  height: var(--workspace-target-height);
+  min-height: 260px;
+  max-height: calc(100vh - 150px);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panel-toggle-label {
+  display: block;
+  max-width: 9px;
+  font-size: 7px;
+  line-height: 1.15;
+  letter-spacing: 0.05em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.preset-picker p {
+  overflow: hidden;
+  color: var(--color-ash);
+  font-size: 7px;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-picker {
+  display: grid;
+  gap: 4px;
 }
 
 .workspace-toolbar,
@@ -678,6 +726,24 @@ body {
 
 .display-toolbar {
   padding: 5px 10px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  overflow: hidden;
+}
+
+.display-drag-handle {
+  cursor: grab;
+}
+
+.display-drag-handle:active {
+  cursor: grabbing;
+}
+
+.display-move-hint {
+  color: var(--color-ash);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
 }
 
 .result-inspector {
@@ -1073,7 +1139,31 @@ input:focus-visible,
   box-shadow: 0 0 20px color-mix(in srgb, var(--color-hud) 18%, transparent);
 }
 
+.workspace-display-hidden {
+  display: none !important;
+}
+
+.workspace-grid {
+  min-width: 0;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.workspace-display,
+.workspace-display > .mil-corners {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 @media (max-width: 1100px) {
+  .simulation-workspace-row {
+    min-height: 220px;
+    max-height: calc(100vh - 120px);
+  }
+
   .result-inspector {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1554,15 +1644,116 @@ label {
 /*  Graph Container  */
 .graph-container {
   position: relative;
+  display: block;
+  flex: 1 1 0%;
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .graph-container .js-plotly-plot,
-.graph-container .plot-container {
+.graph-container .plot-container,
+.graph-container .svg-container,
+.plotly-graph-shell,
+.plotly-graph-body,
+.trajectory-canvas-shell,
+.trajectory-canvas-shell > div,
+.trajectory-canvas-shell canvas {
   width: 100% !important;
   height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}
+
+.plotly-graph-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-obsidian);
+  border-radius: var(--ui-radius);
+}
+
+.plotly-graph-caption {
+  flex: 0 0 auto;
+  min-height: 28px;
+  overflow: hidden;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-panel-border);
+  color: var(--color-bright);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plotly-graph-body {
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+.trajectory-canvas-shell {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #0a0e16;
+  border-radius: var(--ui-radius);
+}
+
+.trajectory-status,
+.trajectory-ready,
+.trajectory-recovery {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.trajectory-status,
+.trajectory-ready {
+  top: 8px;
+  left: 8px;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-hud) 35%, transparent);
+  background: rgba(10, 14, 22, 0.72);
+  color: var(--color-hud);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+}
+
+.trajectory-ready {
+  opacity: 0.68;
+}
+
+.trajectory-recovery {
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  background: rgba(10, 14, 22, 0.92);
+  color: var(--color-light);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.graph-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  place-items: center;
+  border: 1px dashed var(--color-panel-border);
+  background: var(--color-obsidian);
+  color: var(--color-mist);
+  padding: 20px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-align: center;
 }
 
 /* Crosshair Corners for HUD panels  */

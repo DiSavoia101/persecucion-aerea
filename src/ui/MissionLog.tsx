@@ -17,8 +17,8 @@ export default function MissionLog({ events, onClear, open, onOpenChange }: Miss
   return (
     <aside className={`mission-log ${open ? "mission-log-open" : ""}`}>
       <div className="mission-log-header">
-        <button onClick={() => onOpenChange(!open)} className="hud-mini-button" aria-expanded={open} aria-label="Abrir o cerrar bitácora">
-          BITÁCORA · {safeEvents.length}
+        <button onClick={() => onOpenChange(!open)} className="hud-mini-button" aria-expanded={open} aria-label={open ? "Ocultar bitácora" : "Mostrar bitácora"} title={open ? "Ocultar bitácora" : "Mostrar bitácora"}>
+          {open ? "OCULTAR BITÁCORA" : "MOSTRAR BITÁCORA"} · {safeEvents.length}
         </button>
         {open && <button onClick={onClear} className="hud-icon-button">LIMPIAR</button>}
       </div>

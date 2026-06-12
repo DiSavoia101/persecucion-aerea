@@ -62,8 +62,8 @@ export default function EventNavigator({
       },
       {
         id: "outcome",
-        label: result.outcome.intercepted ? "INTERCEPCION" : "FIN",
-        detail: result.outcome.intercepted ? "Impacto registrado" : "Sin intercepcion",
+        label: result.outcome.intercepted ? "INTERCEPCIÓN" : "FIN",
+        detail: result.outcome.intercepted ? "Impacto registrado" : "Sin intercepción",
         frame: outcomeFrame,
         time: result.time[outcomeFrame] ?? outcomeTime,
         tone: "outcome",
@@ -103,7 +103,7 @@ export default function EventNavigator({
       </div>
 
       <button type="button" className="event-nav-arrow" onClick={() => jumpRelative(-1)} aria-label="Ir al hito anterior">
-        PREV
+        ANT
       </button>
 
       <div className="event-navigator-track">
@@ -127,7 +127,7 @@ export default function EventNavigator({
       </div>
 
       <button type="button" className="event-nav-arrow" onClick={() => jumpRelative(1)} aria-label="Ir al siguiente hito">
-        NEXT
+        SIG
       </button>
     </div>
   );
