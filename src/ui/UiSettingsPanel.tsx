@@ -4,6 +4,8 @@ export type UiTheme = "green" | "cyan" | "amber" | "threat" | "blueprint" | "ter
 export type UiDensity = "compact" | "normal" | "presentation";
 export type PanelStyle = "tactical" | "glass" | "blueprint" | "crt" | "minimal" | "alert";
 export type GridIntensity = "low" | "medium" | "high";
+export type SimulationVolume = "low" | "medium" | "high";
+export type WorkspaceSize = "compact" | "normal" | "wide" | "maximum";
 
 export interface UiSettings {
   theme: UiTheme;
@@ -12,6 +14,13 @@ export interface UiSettings {
   reducedMotion: boolean;
   density: UiDensity;
   sound: boolean;
+  simulationSound: boolean;
+  simulationMotor: boolean;
+  impactSound: boolean;
+  alarmSound: boolean;
+  simulationVolume: SimulationVolume;
+  workspaceSize: WorkspaceSize;
+  showMissionMilestones: boolean;
   panelStyle: PanelStyle;
   gridIntensity: GridIntensity;
 }
@@ -63,8 +72,10 @@ export default function UiSettingsPanel({
         onClick={() => setOpen((value) => !value)}
         className="hud-mini-button"
         aria-expanded={open}
+        aria-label={open ? "Ocultar preferencias visuales" : "Mostrar preferencias visuales"}
+        title={open ? "Ocultar preferencias visuales" : "Mostrar preferencias visuales"}
       >
-        VISUAL
+        {open ? "OCULTAR PREFERENCIAS" : "MOSTRAR PREFERENCIAS"}
       </button>
 
       {open && (
@@ -89,6 +100,14 @@ export default function UiSettingsPanel({
               </button>
             ))}
           </div>
+
+          <label className="mt-3">TAMAÑO DEL ÁREA DE VISORES</label>
+          <select value={settings.workspaceSize} onChange={(event) => patch({ workspaceSize: event.target.value as WorkspaceSize })}>
+            <option value="compact">VISORES COMPACTOS</option>
+            <option value="normal">VISORES NORMAL</option>
+            <option value="wide">VISORES AMPLIOS</option>
+            <option value="maximum">VISORES MÁXIMO</option>
+          </select>
 
           <label className="mt-3">ESTILO DE PANEL</label>
           <select value={settings.panelStyle} onChange={(event) => patch({ panelStyle: event.target.value as PanelStyle })}>
@@ -116,7 +135,24 @@ export default function UiSettingsPanel({
             <Toggle label="EFECTOS / RESPLANDOR" enabled={settings.glow} onChange={(glow) => patch({ glow })} />
             <Toggle label="ANIMACIÓN REDUCIDA" enabled={settings.reducedMotion} onChange={(reducedMotion) => patch({ reducedMotion })} />
             <Toggle label="SONIDO UI" enabled={settings.sound} onChange={(sound) => patch({ sound })} />
-            <Toggle label="MODO PRESENTACIÓN" enabled={presentationMode} onChange={onPresentationModeChange} />
+            <Toggle label="SONIDO SIMULACIÓN" enabled={settings.simulationSound} onChange={(simulationSound) => patch({ simulationSound })} />
+            <Toggle label="MOTOR" enabled={settings.simulationMotor} onChange={(simulationMotor) => patch({ simulationMotor })} />
+            <Toggle label="EVENTOS DE IMPACTO" enabled={settings.impactSound} onChange={(impactSound) => patch({ impactSound })} />
+            <Toggle label="ALARMA PREVIA" enabled={settings.alarmSound} onChange={(alarmSound) => patch({ alarmSound })} />
+            <label className="mt-2">VOLUMEN SIMULACIÓN</label>
+            <div className="grid grid-cols-3 gap-1">
+              {(["low", "medium", "high"] as SimulationVolume[]).map((volume) => (
+                <button
+                  key={volume}
+                  onClick={() => patch({ simulationVolume: volume })}
+                  className={`hud-mini-button ${settings.simulationVolume === volume ? "hud-mini-button-active" : ""}`}
+                >
+                  {volume === "low" ? "BAJO" : volume === "medium" ? "MEDIO" : "ALTO"}
+                </button>
+              ))}
+            </div>
+            <Toggle label={settings.showMissionMilestones ? "OCULTAR HITOS DE MISIÓN" : "MOSTRAR HITOS DE MISIÓN"} enabled={settings.showMissionMilestones} onChange={(showMissionMilestones) => patch({ showMissionMilestones })} />
+            <Toggle label={presentationMode ? "SALIR DE PRESENTACIÓN" : "MOSTRAR PRESENTACIÓN"} enabled={presentationMode} onChange={onPresentationModeChange} />
           </div>
           <button onClick={onReset} className="hud-mini-button w-full mt-3">RESTABLECER UI</button>
         </div>

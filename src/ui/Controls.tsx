@@ -49,6 +49,9 @@ function Section({ title, code, accentColor, defaultOpen = true, onReset, childr
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer hover:bg-glass-hover transition-colors"
         whileTap={{ scale: 0.995 }}
+        aria-expanded={open}
+        aria-label={`${open ? "Ocultar" : "Mostrar"} ${title}`}
+        title={`${open ? "Ocultar" : "Mostrar"} ${title}`}
       >
         <div className={`w-1.5 h-1.5 ${accent.dot} ${open ? "pulse-dot" : ""}`} />
         <span className="text-[8px] text-ash tracking-[0.15em] font-bold">[{code}]</span>
@@ -76,6 +79,9 @@ function Section({ title, code, accentColor, defaultOpen = true, onReset, childr
             RESTAURAR
           </span>
         )}
+        <span className="text-[7px] text-ash tracking-[0.08em]">
+          {open ? "OCULTAR" : "MOSTRAR"}
+        </span>
         <motion.span
           animate={{ rotate: open ? 90 : 0 }}
           transition={{ duration: 0.15 }}
@@ -209,6 +215,23 @@ const INTEGRATOR_OPTIONS: { value: Integrator; label: string }[] = [
   { value: "euler", label: "EULER (DIDÁCTICO)" },
 ];
 
+type PresetId = "pn" | "pursuit" | "weave" | "reactive" | "slowMissile" | "fastMissile" | "nearEscape" | "euler" | "rk4" | "closeImpact" | "noIntercept" | "demo3d";
+
+const PRESETS: { id: PresetId; category: string; label: string; description: string }[] = [
+  { id: "pn", category: "Intercepción", label: "Intercepción PN limpia", description: "PN con intercepción rápida y estable." },
+  { id: "pursuit", category: "Básicos", label: "Persecución pura", description: "Guiado directo contra un objetivo rectilíneo." },
+  { id: "weave", category: "Evasión", label: "Serpenteo evasivo", description: "El avión serpentea para intentar escapar." },
+  { id: "reactive", category: "Evasión", label: "Evasión reactiva", description: "Maniobra reactiva con alta aceleración lateral." },
+  { id: "slowMissile", category: "Comparación", label: "Misil lento", description: "Reduce velocidad y capacidad de cierre del misil." },
+  { id: "fastMissile", category: "Comparación", label: "Misil rápido", description: "Encuentro corto con misil de alta velocidad." },
+  { id: "nearEscape", category: "Intercepción", label: "Avión casi escapa", description: "Escenario exigente cerca del límite de intercepción." },
+  { id: "euler", category: "Comparación", label: "Comparar Euler", description: "Configuración base usando integrador Euler." },
+  { id: "rk4", category: "Comparación", label: "Comparar RK4", description: "Configuración base usando integrador RK4." },
+  { id: "closeImpact", category: "Intercepción", label: "Impacto cercano", description: "Distancia inicial corta para observar el impacto." },
+  { id: "noIntercept", category: "Estrés / demo", label: "Sin intercepción", description: "El misil no alcanza al avión antes del tiempo máximo." },
+  { id: "demo3d", category: "Estrés / demo", label: "Demo 3D", description: "Trayectorias amplias y maniobra visible para presentación." },
+];
+
 function cloneConfig(config: SimulationConfig): SimulationConfig {
   return {
     aircraft: {
@@ -262,6 +285,7 @@ export function validateConfig(config: SimulationConfig): string[] {
 //Main Component
 export default function Controls({ config, onConfigChange, onSimulate, configStatus = "APLICADA", runCount = 1, onEvent }: ControlsProps) {
   const validationErrors = validateConfig(config);
+  const [selectedPreset, setSelectedPreset] = useState<PresetId>("pn");
 
   const updateAircraft = useCallback(
     (patch: Partial<typeof config.aircraft>) => {
@@ -297,10 +321,13 @@ export default function Controls({ config, onConfigChange, onSimulate, configSta
     [config, onConfigChange],
   );
 
-  const applyPreset = useCallback((preset: "pn" | "pursuit" | "weave") => {
+  const applyPreset = useCallback((preset: PresetId) => {
     const next = cloneConfig(mockConfig);
 
-    if (preset === "pursuit") {
+    if (preset === "pn") {
+      next.missile.guidanceLaw = "proportional_nav";
+      next.missile.navConstant = 4;
+    } else if (preset === "pursuit") {
       next.aircraft.maneuver = "straight";
       next.missile.guidanceLaw = "pure_pursuit";
     } else if (preset === "weave") {
@@ -308,11 +335,51 @@ export default function Controls({ config, onConfigChange, onSimulate, configSta
       next.aircraft.maxAccel = 110;
       next.aircraft.maneuverParams = { weaveAmp: 105, weaveFreq: 2.8 };
       next.missile.navConstant = 3.5;
+    } else if (preset === "reactive") {
+      next.aircraft.maneuver = "reactive_evade";
+      next.aircraft.maxAccel = 145;
+      next.missile.navConstant = 3.2;
+    } else if (preset === "slowMissile") {
+      next.missile.velocity = [-310, -80, 0];
+      next.missile.maxAccel = 180;
+    } else if (preset === "fastMissile") {
+      next.missile.velocity = [-720, -180, 0];
+      next.missile.maxAccel = 380;
+    } else if (preset === "nearEscape") {
+      next.aircraft.velocity = [285, 0, 0];
+      next.aircraft.maneuver = "weave";
+      next.aircraft.maxAccel = 135;
+      next.aircraft.maneuverParams = { weaveAmp: 130, weaveFreq: 2.4 };
+      next.missile.velocity = [-390, -110, 0];
+      next.simulation.maxTime = 12;
+    } else if (preset === "euler") {
+      next.simulation.integrator = "euler";
+    } else if (preset === "rk4") {
+      next.simulation.integrator = "rk4";
+    } else if (preset === "closeImpact") {
+      next.missile.position = [900, 320, 0];
+      next.simulation.maxTime = 6;
+    } else if (preset === "noIntercept") {
+      next.aircraft.velocity = [300, 0, 0];
+      next.missile.velocity = [-220, -40, 0];
+      next.missile.maxAccel = 90;
+      next.simulation.maxTime = 6;
+    } else if (preset === "demo3d") {
+      next.aircraft.position = [0, 0, 180];
+      next.aircraft.maneuver = "constant_turn";
+      next.aircraft.maxAccel = 120;
+      next.aircraft.maneuverParams = { turnRate: 0.42 };
+      next.missile.position = [2600, 1100, -160];
+      next.simulation.maxTime = 14;
     }
 
+    const errors = validateConfig(next);
+    if (errors.length > 0) {
+      onEvent?.(`Preajuste inválido: ${errors[0]}`);
+      return;
+    }
     onConfigChange(next);
-    const presetLabel = preset === "pn" ? "navegación proporcional" : preset === "pursuit" ? "persecución pura" : "serpenteo";
-    onEvent?.(`Preajuste cargado: ${presetLabel}`);
+    onEvent?.(`Preajuste cargado: ${PRESETS.find((item) => item.id === preset)?.label ?? preset}`);
   }, [onConfigChange, onEvent]);
 
   const handleSimulate = useCallback(() => {
@@ -525,16 +592,25 @@ export default function Controls({ config, onConfigChange, onSimulate, configSta
           </span>
           <span className="text-ash">ÚLTIMO RESULTADO: CORRIDA #{runCount}</span>
         </div>
-        <div className="grid grid-cols-2 gap-1">
-          <button onClick={() => applyPreset("pn")} className="btn btn-ghost !px-1 !py-1.5 !text-[8px]">
-            INTERCEPCIÓN PN
-          </button>
-          <button onClick={() => applyPreset("pursuit")} className="btn btn-ghost !px-1 !py-1.5 !text-[8px]">
-            PERSECUCIÓN PURA
-          </button>
-          <button onClick={() => applyPreset("weave")} className="btn btn-ghost !px-1 !py-1.5 !text-[8px]">
-            EVASIÓN SERPENTEO
-          </button>
+        <div className="preset-picker">
+          <label>ESCENARIO PREDEFINIDO</label>
+          <div className="grid grid-cols-[1fr_auto] gap-1">
+            <select value={selectedPreset} onChange={(event) => setSelectedPreset(event.target.value as PresetId)}>
+              {Array.from(new Set(PRESETS.map((preset) => preset.category))).map((category) => (
+                <optgroup key={category} label={category}>
+                  {PRESETS.filter((preset) => preset.category === category).map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button onClick={() => applyPreset(selectedPreset)} className="btn btn-ghost !px-2 !py-1.5 !text-[8px]">
+              CARGAR
+            </button>
+          </div>
+          <p>{PRESETS.find((preset) => preset.id === selectedPreset)?.description}</p>
+        </div>
+        <div className="grid grid-cols-1 gap-1">
           <button onClick={() => {
             onConfigChange(cloneConfig(mockConfig));
             onEvent?.("Configuración global restablecida");
